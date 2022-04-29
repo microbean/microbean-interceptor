@@ -52,6 +52,12 @@ import org.microbean.development.annotation.Convenience;
 import org.microbean.invoke.CachingSupplier;
 import org.microbean.invoke.FixedValueSupplier;
 
+/**
+ * A {@link Callable} {@link InvocationContext}.
+ *
+ * @author <a href="https://about.me/lairdnelson"
+ * target="_parent">Laird Nelson</a>
+ */
 public final class Chain implements Callable<Object>, Cloneable, InvocationContext {
 
   private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
@@ -59,13 +65,18 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   private static final VarHandle CONTEXT_DATA;
 
   static {
-    final Lookup lookup = MethodHandles.lookup();
     try {
-      CONTEXT_DATA = lookup.findVarHandle(Chain.class, "contextData", Map.class);
+      CONTEXT_DATA = MethodHandles.lookup().findVarHandle(Chain.class, "contextData", Map.class);
     } catch (final ReflectiveOperationException reflectiveOperationException) {
       throw (Error)new ExceptionInInitializerError(reflectiveOperationException.getMessage()).initCause(reflectiveOperationException);
     }
   }
+
+
+  /*
+   * Instance fields.
+   */
+
 
   private final List<? extends InterceptorFunction> interceptorFunctions;
 
@@ -89,6 +100,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
   private volatile boolean primed;
 
+
+  /*
+   * Constructors.
+   */
+
+
+  /**
+   * Creates a new {@link Chain}.
+   */
   public Chain() {
     this(List.of(),
          false, // sort
@@ -178,22 +198,91 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    */
 
 
+  /**
+   * Returns a {@link Chain} whose internal list of {@link
+   * InterceptorFunction}s is sorted by {@linkplain
+   * Prioritized#priority() priority}, where the smallest number
+   * "wins".
+   *
+   * @return a {@link Chain}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent but not necessarily
+   * deterministic, since two {@link InterceptorFunction}s with the
+   * same {@linkplain Prioritized#priority() priority} may sort to
+   * different indices in the relevant list.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
   public final Chain sort() {
     return this.interceptorFunctions.size() <= 1 ? this : this.copy(this.interceptorFunctions, true);
   }
 
-  @Convenience
+  /**
+   * Returns this {@link Chain} with its {@linkplain #getTarget()
+   * target} already set to the supplied {@code target}.
+   *
+   * @param target the new target; may be {@code null}
+   *
+   * @return this {@link Chain}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   *
+   * @see #getTarget()
+   */
   public final Chain withTarget(final Object target) {
     this.target.set(target);
     return this;
   }
-
+  
+  /**
+   * Calls {@link #setParameters(Object[])} with the supplied {@code
+   * parameters} and returns this {@link Chain}.
+   *
+   * @param parameters the parameters; may be {@code null}
+   *
+   * @return this {@link Chain}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   *
+   * @see #setParameters(Object[])
+   */
   @Convenience
   public final Chain withParameters(final Object... parameters) {
     this.setParameters(parameters);
     return this;
   }
 
+  /**
+   * Calls {@link #setParameters(Supplier)} with the supplied {@code
+   * parametersSupplier} and returns this {@link Chain}.
+   *
+   * @param parametersSupplier a {@link Supplier} supplying
+   * parameters; may be {@code null}
+   *
+   * @return this {@link Chain}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   *
+   * @see #setParameters(Supplier)
+   */
   @Convenience
   public final Chain withParameters(final Supplier<? extends Object[]> parametersSupplier) {
     this.setParameters(parametersSupplier);
@@ -216,28 +305,47 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     return this.plusInterceptorFunction(function, null);
   }
 
+  /**
+   * Returns a {@link Chain} that reflects the addition of the
+   * supplied {@link InterceptorFunction}.
+   *
+   * @param function the {@link InterceptorFunction}; may be {@code
+   * null} in which case this {@link Chain} will be returned
+   *
+   * @param interceptorSupplier a {@link Supplier} of an interceptor;
+   * may be {@code null} in which case an appropriate representation
+   * of the {@link #getTarget()} method will be used instead
+   *
+   * @return a {@link Chain} that reflects the addition of the
+   * supplied {@link InterceptorFunction}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
   public final Chain plusInterceptorFunction(final InterceptorFunction function, final Supplier<?> interceptorSupplier) {
-    final Chain returnValue;
     if (function == null) {
-      returnValue = this;
-    } else {
-      final List<InterceptorFunction> unsortedInterceptorFunctions = new ArrayList<>(this.interceptorFunctions.size() + 1);
-      unsortedInterceptorFunctions.addAll(this.interceptorFunctions);
-      unsortedInterceptorFunctions.add(function);
-      final IdentityHashMap<InterceptorFunction, Supplier<?>> map = new IdentityHashMap<>(this.interceptorSuppliers);
-      final Supplier<?> thisGetTarget = this::getTarget;
-      if (interceptorSupplier == null || interceptorSupplier == thisGetTarget) {
-        map.put(function, thisGetTarget);
-      } else if (interceptorSupplier instanceof CachingSupplier<?> cs) {
-        map.put(function, cs);
-      } else {
-        map.put(function, new CachingSupplier<>(interceptorSupplier));
-      }
-      returnValue = this.copy(unsortedInterceptorFunctions, false, map);
+      return this;
     }
-    return returnValue;
+    final List<InterceptorFunction> unsortedInterceptorFunctions = new ArrayList<>(this.interceptorFunctions.size() + 1);
+    unsortedInterceptorFunctions.addAll(this.interceptorFunctions);
+    unsortedInterceptorFunctions.add(function);
+    final IdentityHashMap<InterceptorFunction, Supplier<?>> map = new IdentityHashMap<>(this.interceptorSuppliers);
+    final Supplier<?> thisGetTarget = this::getTarget;
+    if (interceptorSupplier == null || interceptorSupplier == thisGetTarget) {
+      map.put(function, thisGetTarget);
+    } else if (interceptorSupplier instanceof CachingSupplier<?> cs) {
+      map.put(function, cs);
+    } else {
+      map.put(function, new CachingSupplier<>(interceptorSupplier));
+    }
+    return this.copy(unsortedInterceptorFunctions, false, map);
   }
 
+  
   public final Chain withTerminalConstructor(final Lookup lookup, final Constructor<?> constructor) {
     constructor.trySetAccessible();
     try {
@@ -574,6 +682,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     return this.primed; // volatile read
   }
 
+  /**
+   * Calls the {@link #proceed()} method and returns its result.
+   *
+   * @return the result of invoking the {@link #proceed()} method
+   *
+   * @exception Exception if an error occurs
+   *
+   * @see #proceed()
+   */
   @Override
   public final Object call() throws Exception {
     return this.proceed();
@@ -600,6 +717,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     }
     return returnValue;
   }
+
 
   /*
    * Static methods.
@@ -631,14 +749,95 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     return null;
   }
 
+  /**
+   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with
+   * {@link Constructor Constructor.class} and the supplied {@link
+   * MethodHandle} as arguments, and returns the result.
+   *
+   * @param mh the {@link MethodHandle} representing a constructor;
+   * must not be {@code null}
+   *
+   * @return a {@link Constructor} representing the supplied {@link
+   * MethodHandle}
+   *
+   * @exception ClassCastException if {@code mh} does not represent a
+   * constructor
+   *
+   * @exception IllegalArgumentException if {@code mh} is not a direct
+   * method handle
+   *
+   * @exception NullPointerException if {@code mh} is {@code null}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
+  @Convenience
   public static final Constructor<?> constructor(final MethodHandle mh) {
     return MethodHandles.reflectAs(Constructor.class, mh);
   }
 
+  /**
+   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with
+   * {@link Method Method.class} and the supplied {@link MethodHandle}
+   * as arguments, and returns the result.
+   *
+   * @param mh the {@link MethodHandle} representing a method; must
+   * not be {@code null}
+   *
+   * @return a {@link Method} representing the supplied {@link
+   * MethodHandle}
+   *
+   * @exception ClassCastException if {@code mh} does not represent a
+   * method
+   *
+   * @exception IllegalArgumentException if {@code mh} is not a direct
+   * method handle
+   *
+   * @exception NullPointerException if {@code mh} is {@code null}
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
+  @Convenience
   public static final Method method(final MethodHandle mh) {
     return MethodHandles.reflectAs(Method.class, mh);
   }
 
+  /**
+   * Returns an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments.
+   *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
+   * @param targetClass the {@link Class} hosting the method; must not
+   * be {@code null}
+   *
+   * @param methodName the name of the method; must not be {@code
+   * null}
+   *
+   * @return an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments
+   *
+   * @exception NullPointerException if any argument is {@code null}
+   *
+   * @exception InterceptorException if an error occurs while looking
+   * up the relevant method
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup,
                                                               final Class<?> targetClass,
                                                               final String methodName) {
@@ -654,6 +853,30 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     }
   }
 
+  /**
+   * Returns an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments.
+   *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
+   * @param method a {@link Method}; must not be {@code null}
+   *
+   * @return an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments
+   *
+   * @exception NullPointerException if any argument is {@code null}
+   *
+   * @exception InterceptorException if an error occurs while
+   * {@linkplain Lookup#unreflect(Method) unreflecting} the relevant
+   * method
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup, final Method method) {
     try {
       return interceptorFunction(lookup, lookup.unreflect(method));
@@ -662,6 +885,29 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     }
   }
 
+  /**
+   * Returns an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments.
+   *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
+   * @param mh a {@link MethodHandle}; must not be null}
+   *
+   * @return an {@link InterceptorFunction} representing the method
+   * designated by the supplied arguments
+   *
+   * @exception NullPointerException if any argument is {@code null}
+   *
+   * @exception InterceptorException if an error occurs while looking
+   * up the relevant method
+   *
+   * @nullability This method never returns {@code null}.
+   *
+   * @idempotency This method is idempotent and deterministic.
+   *
+   * @threadsafety This method is safe for concurrent use by multiple
+   * threads.
+   */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup, final MethodHandle mh) {
     final MethodType methodType = mh.type();
     final String methodName;

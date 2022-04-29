@@ -16,22 +16,63 @@
  */
 package org.microbean.interceptor;
 
+/**
+ * A {@link RuntimeException} indicating that an error has occurred
+ * while setting up an interception chain.
+ *
+ * @author <a href="https://about.me/lairdnelson"
+ * target="_parent">Laird Nelson</a>
+ */
 public class InterceptorException extends RuntimeException {
 
+  /**
+   * The version of this class for {@linkplain java.io.Serializable
+   * serialization} purposes.
+   */
   private static final long serialVersionUID = 1L;
 
+
+  /*
+   * Constructors.
+   */
+
+
+  /**
+   * Creates a new {@link InterceptorException}.
+   */
   public InterceptorException() {
     super();
   }
 
+  /**
+   * Creates a new {@link InterceptorException}.
+   *
+   * @param message a message describing the error; may be {@code
+   * null}
+   */
   public InterceptorException(final String message) {
     super(message);
   }
 
+  /**
+   * Creates a new {@link InterceptorException}.
+   *
+   * @param cause the {@link Throwable} that caused this {@link
+   * InterceptorException} to be thrown; may be {@code null}
+   */
   public InterceptorException(final Throwable cause) {
     super(cause);
   }
 
+  /**
+   * Creates a new {@link InterceptorException}.
+   *
+   * @param message a message describing the error; may be {@code
+   * null}
+   *
+   * @param cause the {@link Throwable} that caused this {@link
+   * InterceptorException} to be thrown; may be {@code null}
+   */
   public InterceptorException(final String message, final Throwable cause) {
     super(message, cause);
   }

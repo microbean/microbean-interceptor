@@ -18,9 +18,33 @@ package org.microbean.interceptor;
 
 import jakarta.interceptor.InvocationContext;
 
+/**
+ * An interface whose implementations perform interceptions.
+ *
+ * @author <a href="https://about.me/lairdnelson"
+ * target="_parent">Laird Nelson</a>
+ *
+ * @see #intercept(Object, InvocationContext)
+ */
 @FunctionalInterface
 public interface InterceptorFunction extends Prioritized {
 
+  /**
+   * Intercepts the interception event represented by the supplied
+   * {@code invocationContext} and returns the result.
+   *
+   * @param interceptor the interceptor performing the interception;
+   * must not be {@code null}
+   *
+   * @param invocationContext the {@link InvocationContext}
+   * representing the interception event; must not be {@code null}
+   *
+   * @return the result of the interception; may be {@code null}
+   *
+   * @exception NullPointerException if any argument is {@code null}
+   *
+   * @exception Exception if an error occurs
+   */
   public Object intercept(final Object interceptor, final InvocationContext invocationContext) throws Exception;
 
 }
