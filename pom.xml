@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.microbean</groupId>
+  <artifactId>microbean-interceptor</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+
+  <parent>
+    <groupId>org.microbean</groupId>
+    <artifactId>microbean-pluginmanagement-pom</artifactId>
+    <version>18</version>
+    <relativePath />
+  </parent>
+
+  <name>microBean™ Interceptor</name>
+  <description>microBean™ Interceptor: Utility classes for implementing interceptors</description>
+  <inceptionYear>2022</inceptionYear>
+  <url>https://microbean.github.io/microbean-interceptor</url>
+
+  <scm>
+    <connection>scm:git:git@github.com:microbean/microbean-interceptor.git</connection>
+    <developerConnection>scm:git:git@github.com:microbean/microbean-interceptor.git</developerConnection>
+    <url>https://github.com/microbean/microbean-interceptor/</url>
+    <tag>HEAD</tag>
+  </scm>
+
+  <dependencyManagement>
+    <dependencies>
+
+
+      <!-- Normal dependencies. -->
+
+
+      <dependency>
+        <groupId>org.microbean</groupId>
+        <artifactId>microbean-development-annotations</artifactId>
+        <version>0.2.12</version>
+        <type>jar</type>
+      </dependency>
+
+      <dependency>
+        <groupId>org.microbean</groupId>
+        <artifactId>microbean-invoke</artifactId>
+        <version>0.0.13</version>
+        <type>jar</type>
+      </dependency>
+      
+      <dependency>
+        <groupId>jakarta.interceptor</groupId>
+        <artifactId>jakarta.interceptor-api</artifactId>
+        <version>2.1.0</version>
+        <type>jar</type>
+      </dependency>
+
+
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+
+    <!-- Compile-scoped dependencies. -->
+
+
+    <dependency>
+      <groupId>jakarta.interceptor</groupId>
+      <artifactId>jakarta.interceptor-api</artifactId>
+      <type>jar</type>
+      <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.microbean</groupId>
+      <artifactId>microbean-development-annotations</artifactId>
+      <type>jar</type>
+      <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.microbean</groupId>
+      <artifactId>microbean-invoke</artifactId>
+      <type>jar</type>
+      <scope>compile</scope>
+    </dependency>
+
+
+    <!-- Test-scoped dependencies. -->
+
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <type>jar</type>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <type>jar</type>
+      <scope>test</scope>
+    </dependency>
+
+
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+
+        <plugin>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <compilerArgs>
+              <arg>-Xlint:all</arg>
+              <arg>-Xlint:-preview</arg>
+              <arg>-Xpkginfo:always</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <configuration>
+            <additionalOptions>
+              <additionalOption>--add-stylesheet</additionalOption>
+              <additionalOption>${project.basedir}/src/main/javadoc/css/fonts.css</additionalOption>
+            </additionalOptions>
+            <docfilessubdirs>true</docfilessubdirs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <argLine>--add-opens=org.microbean.interceptor/org.microbean.interceptor=ALL-UNNAMED</argLine>
+            <!-- See https://junit.org/junit5/docs/snapshot/user-guide/#running-tests-build-maven-config-params -->
+            <!-- See https://github.com/apache/maven-surefire/blob/eb48f1b59ca5ccf6954ef33ecab03dbaf93214cd/surefire-providers/surefire-junit-platform/src/main/java/org/apache/maven/surefire/junitplatform/JUnitPlatformProvider.java#L242-L262 -->
+            <properties>
+              <configurationParameters>
+                junit.jupiter.execution.parallel.enabled=false
+                junit.jupiter.execution.parallel.mode.default=concurrent
+              </configurationParameters>
+            </properties>
+            <systemPropertyVariables>
+              <project.build.directory>${project.build.directory}</project.build.directory>
+              <project.build.testOutputDirectory>${project.build.testOutputDirectory}</project.build.testOutputDirectory>
+            </systemPropertyVariables>
+          </configuration>
+        </plugin>
+
+      </plugins>
+    </pluginManagement>
+    <plugins>
+
+      <plugin>
+        <groupId>com.github.github</groupId>
+        <artifactId>site-maven-plugin</artifactId>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <properties>
+
+    <jdkToolchainVendor>openjdk</jdkToolchainVendor>
+
+    <!-- maven-compiler-plugin properties -->
+    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+
+    <!-- maven-javadoc-plugin properties -->
+    <detectJavaApiLink>false</detectJavaApiLink>
+    <links>https://docs.oracle.com/en/java/javase/17/docs/api,https://microbean.github.io/microbean-development-annotations/apidocs/</links>
+
+  </properties>
+
+  <reporting>
+    <plugins>
+      <plugin>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <reportSets>
+          <reportSet>
+            <reports>
+              <report>javadoc-no-fork</report>
+            </reports>
+          </reportSet>
+        </reportSets>
+      </plugin>
+    </plugins>
+  </reporting>
+
+</project>
