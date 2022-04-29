@@ -50,6 +50,7 @@ import jakarta.interceptor.InvocationContext;
 import org.microbean.development.annotation.Convenience;
 
 import org.microbean.invoke.CachingSupplier;
+import org.microbean.invoke.FixedValueSupplier;
 
 public final class Chain implements Callable<Object>, Cloneable, InvocationContext {
 
@@ -57,13 +58,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
   private static final VarHandle CONTEXT_DATA;
 
-  private static final VarHandle TARGET;
-
   static {
     final Lookup lookup = MethodHandles.lookup();
     try {
       CONTEXT_DATA = lookup.findVarHandle(Chain.class, "contextData", Map.class);
-      TARGET = lookup.findVarHandle(Chain.class, "target", Object.class);
     } catch (final ReflectiveOperationException reflectiveOperationException) {
       throw (Error)new ExceptionInInitializerError(reflectiveOperationException.getMessage()).initCause(reflectiveOperationException);
     }
@@ -77,7 +75,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
   private volatile Map<String, Object> contextData;
 
-  private volatile Object target;
+  private final AtomicReference<Object> target;
 
   private volatile Supplier<? extends Object[]> parameters;
 
@@ -97,7 +95,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
          false, // copy
          null, // interceptorSuppliers
          null, // contextData
-         null, // target
+         new AtomicReference<>(), // target
          null, // parameters
          null, // constructorSupplier,
          null, // methodSupplier,
@@ -112,7 +110,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                 final boolean copy,
                 final IdentityHashMap<? extends InterceptorFunction, ? extends Supplier<?>> interceptorSuppliers, // not copied!
                 final Map<String, Object> contextData,
-                final Object target,
+                final AtomicReference<Object> target,
                 final Supplier<? extends Object[]> parameters,
                 final Supplier<? extends Constructor<?>> constructorSupplier,
                 final Supplier<? extends Method> methodSupplier,
@@ -137,7 +135,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     // Note to future maintainers: don't add isEmpty() check
     this.interceptorSuppliers = interceptorSuppliers == null ? Map.of() : interceptorSuppliers;
     this.contextData = contextData;
-    this.target = target;
+    this.target = target == null ? new AtomicReference<>() : target;
     this.parameters = parameters;
     if (constructorSupplier == null) {
       this.constructorSupplier = new CachingSupplier<>(Chain::returnNull);
@@ -180,9 +178,13 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    */
 
 
+  public final Chain sort() {
+    return this.interceptorFunctions.size() <= 1 ? this : this.copy(this.interceptorFunctions, true);
+  }
+
   @Convenience
   public final Chain withTarget(final Object target) {
-    this.target = target; // volatile write
+    this.target.set(target);
     return this;
   }
 
@@ -478,7 +480,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
   @Override // InvocationContext
   public final Object getTarget() {
-    return this.target; // volatile read
+    return this.target.get();
   }
 
   @Override
@@ -560,16 +562,16 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   public final Chain prime() {
-    final boolean primed = this.primed;
+    final boolean primed = this.primed; // volatile read
     if (!primed) {
       this.interceptorSuppliers.forEach(Chain::prime);
-      this.primed = true;
+      this.primed = true; // volatile write
     }
     return this;
   }
 
   public final boolean isPrimed() {
-    return this.primed;
+    return this.primed; // volatile read
   }
 
   @Override
@@ -583,7 +585,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     if (this.interceptorFunctions.isEmpty()) {
       returnValue = this.terminalFunction.apply(this.getTarget(), this.getParameters());
       if (this.setTarget) {
-        this.target = returnValue; // volatile write
+        this.target.set(returnValue);
       }
     } else {
       final Chain chain = this.copy(1);
