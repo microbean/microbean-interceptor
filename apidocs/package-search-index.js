@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"m":"org.microbean.interceptor","l":"org.microbean.interceptor"}];updateSearchResults();
