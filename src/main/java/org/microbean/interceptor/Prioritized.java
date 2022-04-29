@@ -31,7 +31,23 @@ package org.microbean.interceptor;
  */
 public interface Prioritized extends Comparable<Prioritized> {
 
+
+  /*
+   * Static fields.
+   */
+
+
+  /**
+   * The default priority returned by the default implementation of
+   * the {@link #priority()} method.
+   */
   public static final int DEFAULT_PRIORITY = 0;
+
+
+  /*
+   * Instance methods.
+   */
+
 
   /**
    * Returns the priority for this {@link Prioritized} implementation.
@@ -107,7 +123,7 @@ public interface Prioritized extends Comparable<Prioritized> {
      * Constructors.
      */
 
-    
+
     private Comparator() {
       super();
     }
@@ -123,7 +139,7 @@ public interface Prioritized extends Comparable<Prioritized> {
      * considered to be less important than the second argument,
      * {@code 0} if it is considered to be of equal importance, and a
      * positive {@code int} if it is considered to be more important.
-     * 
+     *
      * @param p0 the first {@link Prioritized}; may be {@code null}
      *
      * @param p1 the second {@link Prioritized}; may be {@code null}
