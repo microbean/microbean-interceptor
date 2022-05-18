@@ -132,7 +132,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   private Chain(final List<? extends InterceptorFunction> interceptorFunctions,
                 final boolean sort,
                 final boolean copy,
-                final IdentityHashMap<? extends InterceptorFunction, ? extends Supplier<?>> interceptorSuppliers, // not copied!
+                final IdentityHashMap<? extends InterceptorFunction, ? extends Supplier<?>> interceptorSuppliers, // read-only, but not copied!
                 final Map<String, Object> contextData,
                 final AtomicReference<Object> target,
                 final Supplier<? extends Object[]> parameters,
@@ -188,7 +188,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
       this.terminalFunction = terminalFunction;
     }
     this.setTarget = setTarget;
-    this.primed = primed;
+    this.primed = primed || this.interceptorSuppliers.isEmpty();
   }
 
 
@@ -1044,9 +1044,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    */
   @Override // InvocationContext
   public final Map<String, Object> getContextData() {
-    final Map<String, Object> map = this.contextData; // volatile read
-    if (map == null && !CONTEXT_DATA.compareAndSet(this, null, new ConcurrentHashMap<>())) { // volatile write
-      return this.contextData; // volatile read
+    Map<String, Object> map = this.contextData; // volatile read
+    if (map == null) {
+      map = new ConcurrentHashMap<>();
+      if (!CONTEXT_DATA.compareAndSet(this, null, map)) { // volatile write
+        return this.contextData; // volatile read
+      }
     }
     return map;
   }
@@ -1124,11 +1127,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    * @see #getParameters()
    */
   public final void setParameters(final Supplier<? extends Object[]> parameters) {
-    if (parameters == null) {
-      this.parameters = Chain::emptyObjectArray; // volatile write
-    } else {
-      this.parameters = parameters; // volatile write
-    }
+    this.parameters = parameters == null ? Chain::emptyObjectArray : parameters; // volatile write
   }
 
   /**
@@ -1334,11 +1333,8 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
       assert this.getTarget() == chain.getTarget();
       final InterceptorFunction interceptorFunction = this.interceptorFunctions.get(0);
       final Supplier<?> interceptorSupplier = this.interceptorSuppliers.get(interceptorFunction);
-      if (interceptorSupplier == null) {
-        returnValue = interceptorFunction.intercept(chain.getTarget(), chain);
-      } else {
-        returnValue = interceptorFunction.intercept(interceptorSupplier.get(), chain);
-      }
+      returnValue =
+        interceptorFunction.intercept(interceptorSupplier == null ? chain.getTarget() : interceptorSupplier.get(), chain);
     }
     return returnValue;
   }
