@@ -26,7 +26,8 @@ module org.microbean.interceptor {
   requires transitive jakarta.interceptor;
   requires transitive org.microbean.development.annotation;
   requires org.microbean.invoke;
-  
+  requires transitive org.microbean.qualifier;
+
   exports org.microbean.interceptor;
-  
+
 }
