@@ -38,9 +38,6 @@ import static org.microbean.interceptor.ConstantDescs.CD_InterceptorBinding;
  * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
  * class.</p>
  *
- * @param <K> the type of a {@link InterceptorBinding}'s {@linkplain
- * #attributes() attribute keys}
- *
  * @param <V> the type of a {@link InterceptorBinding}'s {@linkplain #value()
  * value} and of its {@linkplain #attributes() attribute values}
  *
@@ -49,12 +46,12 @@ import static org.microbean.interceptor.ConstantDescs.CD_InterceptorBinding;
  *
  * @see Binding
  */
-public final class InterceptorBinding<K extends Comparable<? super K>, V> extends Binding<K, V, InterceptorBinding<K, V>> {
+public final class InterceptorBinding<V> extends Binding<V, InterceptorBinding<V>> {
 
   private InterceptorBinding(final String name,
-                    final V value,
-                    final Map<? extends K, ? extends V> attributes,
-                    final Map<? extends K, ? extends V> info) {
+                             final V value,
+                             final Map<? extends String, ?> attributes,
+                             final Map<? extends String, ?> info) {
     super(name, value, attributes, info);
   }
 
@@ -78,7 +75,7 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  @Override // Binding<K, V, InterceptorBinding<K, V>>
+  @Override // Binding<V, InterceptorBinding<V>>
   protected final MethodHandleDesc describeConstructor() {
     return
       MethodHandleDesc.ofMethod(STATIC,
@@ -90,9 +87,6 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
   /**
    * Returns a {@link InterceptorBinding}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain #attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain #value() value} and of its {@linkplain #attributes()
@@ -110,16 +104,13 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public static final <K extends Comparable<? super K>, V> InterceptorBinding<K, V> of(final String name) {
+  public static final <V> InterceptorBinding<V> of(final String name) {
     return of(name, null, null, null);
   }
 
   /**
    * Returns a {@link InterceptorBinding}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain #attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain #value() value} and of its {@linkplain #attributes()
@@ -140,16 +131,13 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public static final <K extends Comparable<? super K>, V> InterceptorBinding<K, V> of(final String name, final V value) {
+  public static final <V> InterceptorBinding<V> of(final String name, final V value) {
     return of(name, value, null, null);
   }
 
   /**
    * Returns a {@link InterceptorBinding}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain #attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain #value() value} and of its {@linkplain #attributes()
@@ -173,18 +161,15 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public static final <K extends Comparable<? super K>, V> InterceptorBinding<K, V> of(final String name,
-                                                                                       final V value,
-                                                                                       final Map<? extends K, ? extends V> attributes) {
+  public static final <V> InterceptorBinding<V> of(final String name,
+                                                   final V value,
+                                                   final Map<? extends String, ?> attributes) {
     return of(name, value, attributes, null);
   }
 
   /**
    * Returns a {@link InterceptorBinding}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain #attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain #value() value} and of its {@linkplain #attributes()
@@ -212,10 +197,10 @@ public final class InterceptorBinding<K extends Comparable<? super K>, V> extend
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public static final <K extends Comparable<? super K>, V> InterceptorBinding<K, V> of(final String name,
-                                                                                       final V value,
-                                                                                       final Map<? extends K, ? extends V> attributes,
-                                                                                       final Map<? extends K, ? extends V> info) {
+  public static final <V> InterceptorBinding<V> of(final String name,
+                                                   final V value,
+                                                   final Map<? extends String, ?> attributes,
+                                                   final Map<? extends String, ?> info) {
     return new InterceptorBinding<>(name, value, attributes, info);
   }
 
