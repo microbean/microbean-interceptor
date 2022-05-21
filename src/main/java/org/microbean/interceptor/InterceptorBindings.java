@@ -44,9 +44,6 @@ import static org.microbean.interceptor.ConstantDescs.CD_Iterable;
  * href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/lang/doc-files/ValueBased.html">value-based</a>
  * class.</p>
  *
- * @param <K> the type of a {@link InterceptorBinding}'s {@linkplain
- * InterceptorBinding#attributes() attribute keys}
- *
  * @param <V> the type of a {@link InterceptorBinding}'s {@linkplain
  * InterceptorBinding#attributes() attribute values}
  *
@@ -55,7 +52,7 @@ import static org.microbean.interceptor.ConstantDescs.CD_Iterable;
  *
  * @see Bindings
  */
-public final class InterceptorBindings<K extends Comparable<? super K>, V> extends Bindings<K, V, InterceptorBinding<K, V>> {
+public final class InterceptorBindings<V> extends Bindings<V, InterceptorBinding<V>> {
 
 
   /*
@@ -63,7 +60,7 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    */
 
 
-  private static final InterceptorBindings<?, ?> EMPTY = new InterceptorBindings<>(List.of());
+  private static final InterceptorBindings<?> EMPTY = new InterceptorBindings<>(List.of());
 
 
   /*
@@ -71,7 +68,7 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    */
 
 
-  private InterceptorBindings(final Iterable<? extends InterceptorBinding<K, V>> interceptorBindings) {
+  private InterceptorBindings(final Iterable<? extends InterceptorBinding<V>> interceptorBindings) {
     super(interceptorBindings);
   }
 
@@ -107,7 +104,7 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    *
    * @see #plus(Iterable)
    */
-  public final InterceptorBindings<K, V> plus(final InterceptorBinding<K, V> interceptorBinding) {
+  public final InterceptorBindings<V> plus(final InterceptorBinding<V> interceptorBinding) {
     if (interceptorBinding == null) {
       return this;
     } else if (this.isEmpty()) {
@@ -142,17 +139,17 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public final InterceptorBindings<K, V> plus(final Iterable<? extends InterceptorBinding<K, V>> interceptorBindings) {
+  public final InterceptorBindings<V> plus(final Iterable<? extends InterceptorBinding<V>> interceptorBindings) {
     if (interceptorBindings == null) {
       return this;
     } else if (this.isEmpty()) {
       return of(interceptorBindings);
     }
-    final Collection<InterceptorBinding<K, V>> newInterceptorBindings = new TreeSet<>();
-    for (final InterceptorBinding<K, V> q : this) {
+    final Collection<InterceptorBinding<V>> newInterceptorBindings = new TreeSet<>();
+    for (final InterceptorBinding<V> q : this) {
       newInterceptorBindings.add(q);
     }
-    for (final InterceptorBinding<K, V> q : interceptorBindings) {
+    for (final InterceptorBinding<V> q : interceptorBindings) {
       newInterceptorBindings.add(q);
     }
     return of(newInterceptorBindings);
@@ -183,7 +180,7 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * @threadsafety This method is safe for concurrent use by multiple
    * threads
    */
-  public final InterceptorBindings<K, V> withPrefix(final String prefix) {
+  public final InterceptorBindings<V> withPrefix(final String prefix) {
     if (prefix == null || this.isEmpty()) {
       return this;
     }
@@ -220,16 +217,16 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * @threadsafety This method is safe for concurrent use by multiple
    * threads, assuming the supplied {@link Function} is
    */
-  public final InterceptorBindings<K, V> withPrefix(final Function<? super InterceptorBinding<K, V>, ? extends String> f) {
+  public final InterceptorBindings<V> withPrefix(final Function<? super InterceptorBinding<V>, ? extends String> f) {
     if (f == null || this.isEmpty()) {
       return this;
     }
-    final Collection<InterceptorBinding<K, V>> newInterceptorBindings = new TreeSet<>();
-    for (final InterceptorBinding<K, V> q : this) {
+    final Collection<InterceptorBinding<V>> newInterceptorBindings = new TreeSet<>();
+    for (final InterceptorBinding<V> q : this) {
       newInterceptorBindings.add(InterceptorBinding.of(f.apply(q),
-                                     q.value(),
-                                     q.attributes(),
-                                     q.info()));
+                                                       q.value(),
+                                                       q.attributes(),
+                                                       q.info()));
     }
     return of(newInterceptorBindings);
   }
@@ -254,7 +251,7 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * @threadsafety This method is, and its overrides must be, safe for
    * concurrent use by multiple threads.
    */
-  @Override // Bindings<K, V, InterceptorBinding<K, V>>
+  @Override // Bindings<V, InterceptorBinding<V>>
   protected final MethodHandleDesc describeConstructor() {
     return
       MethodHandleDesc.ofMethod(STATIC,
@@ -274,9 +271,6 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * newly created, whose {@link #isEmpty() isEmpty()} method will
    * return {@code true}.
    *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain InterceptorBinding#attributes() attribute keys}
-   *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain InterceptorBinding#attributes() attribute values}
    *
@@ -290,16 +284,13 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * threads.
    */
   @SuppressWarnings("unchecked")
-  public static final <K extends Comparable<? super K>, V> InterceptorBindings<K, V> of() {
-    return (InterceptorBindings<K, V>)EMPTY;
+  public static final <V> InterceptorBindings<V> of() {
+    return (InterceptorBindings<V>)EMPTY;
   }
 
   /**
    * Returns a {@link InterceptorBindings}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain InterceptorBinding#attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain InterceptorBinding#attributes() attribute values}
@@ -320,16 +311,13 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * @threadsafety This method is safe for concurrent use by multiple
    * threads.
    */
-  public static final <K extends Comparable<? super K>, V> InterceptorBindings<K, V> of(final InterceptorBinding<K, V> interceptorBinding) {
+  public static final <V> InterceptorBindings<V> of(final InterceptorBinding<V> interceptorBinding) {
     return of(List.of(Objects.requireNonNull(interceptorBinding, "interceptorBinding")));
   }
 
   /**
    * Returns a {@link InterceptorBindings}, which may or may not be
    * newly created, representing the supplied arguments.
-   *
-   * @param <K> the type of the {@link InterceptorBinding}'s
-   * {@linkplain InterceptorBinding#attributes() attribute keys}
    *
    * @param <V> the type of the {@link InterceptorBinding}'s
    * {@linkplain InterceptorBinding#attributes() attribute values}
@@ -348,13 +336,13 @@ public final class InterceptorBindings<K extends Comparable<? super K>, V> exten
    * threads.
    */
   // This method is used by the describeConstructor() method.
-  public static final <K extends Comparable<? super K>, V> InterceptorBindings<K, V> of(final Iterable<? extends InterceptorBinding<K, V>> interceptorBindings) {
+  public static final <V> InterceptorBindings<V> of(final Iterable<? extends InterceptorBinding<V>> interceptorBindings) {
     if (interceptorBindings == null) {
       return of();
     }
-    final Iterator<? extends InterceptorBinding<K, V>> i = interceptorBindings.iterator();
+    final Iterator<? extends InterceptorBinding<V>> i = interceptorBindings.iterator();
     if (i.hasNext()) {
-      final Collection<InterceptorBinding<K, V>> newInterceptorBindings = new TreeSet<>();
+      final Collection<InterceptorBinding<V>> newInterceptorBindings = new TreeSet<>();
       newInterceptorBindings.add(i.next());
       while (i.hasNext()) {
         newInterceptorBindings.add(i.next());
