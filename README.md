@@ -31,7 +31,7 @@ Include microBean™ Interceptor as a Maven dependency:
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
   <!-- Always check https://search.maven.org/artifact/org.microbean/microbean-interceptor for up-to-date available versions. -->
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
