@@ -1,18 +1,15 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2022 microBean™.
+ * Copyright © 2022–2023 microBean™.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
- * implied.  See the License for the specific language governing
- * permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations under the License.
  */
 package org.microbean.interceptor;
 
@@ -27,15 +24,16 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -47,20 +45,60 @@ import java.util.function.Supplier;
 
 import jakarta.interceptor.InvocationContext;
 
-import org.microbean.development.annotation.Convenience;
-
 import org.microbean.invoke.CachingSupplier;
 import org.microbean.invoke.FixedValueSupplier;
 
 /**
  * A {@link Callable} {@link InvocationContext}.
  *
- * @author <a href="https://about.me/lairdnelson"
- * target="_parent">Laird Nelson</a>
+ * @author <a href="https://about.me/lairdnelson" target="_parent">Laird Nelson</a>
  */
 public final class Chain implements Callable<Object>, Cloneable, InvocationContext {
 
+  private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
+
+  private static final Class<?>[] SINGLE_OBJECT_CLASS_ARRAY = new Class<?>[] { Object.class };
+
+  private static final Class<?>[] DOUBLE_OBJECT_CLASS_ARRAY = new Class<?>[] { Object.class, Object.class };
+
+  private static final Class<?>[] OBJECT_INVOCATIONCONTEXT_CLASS_ARRAY = new Class<?>[] { Object.class, InvocationContext.class };
+
+  private static final MethodType BICONSUMER_ACCEPT_SIGNATURE = MethodType.methodType(void.class, DOUBLE_OBJECT_CLASS_ARRAY);
+
+  private static final MethodType BICONSUMER_FACTORY_TYPE = MethodType.methodType(BiConsumer.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType BIFUNCTION_APPLY_SIGNATURE = MethodType.methodType(Object.class, DOUBLE_OBJECT_CLASS_ARRAY);
+
+  private static final MethodType BIFUNCTION_FACTORY_TYPE = MethodType.methodType(BiFunction.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType CONSUMER_ACCEPT_SIGNATURE = MethodType.methodType(void.class, SINGLE_OBJECT_CLASS_ARRAY);
+
+  private static final MethodType CONSUMER_FACTORY_TYPE = MethodType.methodType(Consumer.class, EMPTY_CLASS_ARRAY);
+
   private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
+
+  private static final MethodType FUNCTION_APPLY_SIGNATURE = MethodType.methodType(Object.class, SINGLE_OBJECT_CLASS_ARRAY);
+
+  private static final MethodType FUNCTION_FACTORY_TYPE = MethodType.methodType(Function.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType INTERCEPTORFUNCTION_FACTORY_TYPE =
+    MethodType.methodType(InterceptorFunction.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType INTERCEPTORFUNCTION_INTERCEPT_SIGNATURE =
+    MethodType.methodType(Object.class, OBJECT_INVOCATIONCONTEXT_CLASS_ARRAY);
+
+  private static final MethodType INTERCEPTORFUNCTION_METHOD_TYPE =
+    MethodType.methodType(Object.class, new Class<?>[] { InvocationContext.class });
+
+  private static final MethodType INTERCEPTORPROCEDURE_FACTORY_TYPE =
+    MethodType.methodType(InterceptorProcedure.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType INTERCEPTORPROCEDURE_EXECUTE_SIGNATURE =
+    MethodType.methodType(void.class, OBJECT_INVOCATIONCONTEXT_CLASS_ARRAY);
+
+  private static final MethodType SUPPLIER_GET_SIGNATURE = MethodType.methodType(Object.class, EMPTY_CLASS_ARRAY);
+
+  private static final MethodType SUPPLIER_FACTORY_TYPE = MethodType.methodType(Supplier.class, EMPTY_CLASS_ARRAY);
 
   private static final VarHandle CONTEXT_DATA;
 
@@ -69,10 +107,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   static {
     final Lookup lookup = MethodHandles.lookup();
     try {
-      CONTEXT_DATA = lookup.findVarHandle(Chain.class, "contextData", Map.class);
+      CONTEXT_DATA = lookup.findVarHandle(Chain.class, "contextData", ConcurrentMap.class);
       PRIMED = lookup.findVarHandle(Chain.class, "primed", boolean.class);
-    } catch (final NoSuchFieldException | IllegalAccessException reflectiveOperationException) {
-      throw (Error)new ExceptionInInitializerError(reflectiveOperationException.getMessage()).initCause(reflectiveOperationException);
+    } catch (final NoSuchFieldException | IllegalAccessException e) {
+      throw (Error)new ExceptionInInitializerError(e.getMessage()).initCause(e);
     }
   }
 
@@ -88,11 +126,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
   private final BiFunction<? super Object, ? super Object[], ?> terminalFunction;
 
-  private volatile Map<String, Object> contextData;
-
+  // Note to future maintainers: you're going to want to come in here and do something fancy with VarHandle and normally
+  // that would absolutely be the right thing to do, but this field is passed by reference to copies of this Chain, so
+  // don't get clever and please leave this alone.
   private final AtomicReference<Object> target;
-
-  private volatile Supplier<? extends Object[]> parameters;
 
   private final CachingSupplier<? extends Constructor<?>> constructorSupplier;
 
@@ -101,6 +138,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   private final CachingSupplier<?> timerSupplier;
 
   private final boolean setTarget;
+
+  private volatile ConcurrentMap<String, Object> contextData;
+
+  private volatile Supplier<? extends Object[]> parameters;
 
   private volatile boolean primed;
 
@@ -133,7 +174,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                 final boolean sort,
                 final boolean copy,
                 final IdentityHashMap<? extends InterceptorFunction, ? extends Supplier<?>> interceptorSuppliers, // read-only, but not copied!
-                final Map<String, Object> contextData,
+                final ConcurrentMap<String, Object> contextData,
                 final AtomicReference<Object> target,
                 final Supplier<? extends Object[]> parameters,
                 final Supplier<? extends Constructor<?>> constructorSupplier,
@@ -203,30 +244,24 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
 
 
   /**
-   * Returns a {@link Chain} whose internal list of {@link
-   * InterceptorFunction}s is sorted by {@linkplain
-   * Prioritized#priority() priority}, where the smallest number
-   * "wins".
+   * Returns a {@link Chain} whose internal list of {@link InterceptorFunction}s is sorted by {@linkplain
+   * Prioritized#priority() priority}, where the smallest number "wins".
    *
    * @return a {@link Chain}
    *
    * @nullability This method never returns {@code null}.
    *
-   * @idempotency This method is idempotent but not necessarily
-   * deterministic, since two {@link InterceptorFunction}s with the
-   * same {@linkplain Prioritized#priority() priority} may sort to
-   * different indices in the relevant list.
+   * @idempotency This method is idempotent but not necessarily deterministic, since two {@link InterceptorFunction}s
+   * with the same {@linkplain Prioritized#priority() priority} may sort to different indices in the relevant list.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public final Chain sort() {
     return this.interceptorFunctions.size() <= 1 ? this : this.copy(this.interceptorFunctions, true);
   }
 
   /**
-   * Returns this {@link Chain} with its {@linkplain #getTarget()
-   * target} already set to the supplied {@code target}.
+   * Returns this {@link Chain} with its {@linkplain #getTarget() target} already set to the supplied {@code target}.
    *
    * @param target the new target; may be {@code null}
    *
@@ -236,8 +271,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #getTarget()
    */
@@ -245,10 +279,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     this.target.set(target);
     return this;
   }
-  
+
   /**
-   * Calls {@link #setParameters(Object[])} with the supplied {@code
-   * parameters} and returns this {@link Chain}.
+   * Calls {@link #setParameters(Object[])} with the supplied {@code parameters} and returns this {@link Chain}.
    *
    * @param parameters the parameters; may be {@code null}
    *
@@ -258,23 +291,19 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #setParameters(Object[])
    */
-  @Convenience
   public final Chain withParameters(final Object... parameters) {
     this.setParameters(parameters);
     return this;
   }
 
   /**
-   * Calls {@link #setParameters(Supplier)} with the supplied {@code
-   * parametersSupplier} and returns this {@link Chain}.
+   * Calls {@link #setParameters(Supplier)} with the supplied {@code parametersSupplier} and returns this {@link Chain}.
    *
-   * @param parametersSupplier a {@link Supplier} supplying
-   * parameters; may be {@code null}
+   * @param parametersSupplier a {@link Supplier} supplying parameters; may be {@code null}
    *
    * @return this {@link Chain}
    *
@@ -282,72 +311,60 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #setParameters(Supplier)
    */
-  @Convenience
   public final Chain withParameters(final Supplier<? extends Object[]> parametersSupplier) {
     this.setParameters(parametersSupplier);
     return this;
   }
 
   /**
-   * Returns a {@link Chain} that reflects the addition of an {@link
-   * InterceptorFunction} built from the supplied arguments.
+   * Returns a {@link Chain} that reflects the addition of an {@link InterceptorFunction} built from the supplied
+   * arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param method a {@link Method} representing an interceptor
-   * method; must not be {@code null}
+   * @param method a {@link Method} representing an interceptor method; must not be {@code null}
    *
-   * @return a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}
+   * @return a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}
    *
-   * @exception NullPointerException if {@code lookup} or {@code
-   * method} is {@code null}
+   * @exception NullPointerException if {@code lookup} or {@code method} is {@code null}
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #plusInterceptorFunction(Lookup, Method, Supplier)
    */
   public final Chain plusInterceptorFunction(final Lookup lookup, final Method method) {
-    // Note to future maintainers: Don't get clever and pass
-    // this::getTarget instead of null as the trailing parameter.
+    // Note to future maintainers: Don't get clever and pass this::getTarget instead of null as the trailing parameter.
     return this.plusInterceptorFunction(lookup, method, null);
   }
 
   /**
-   * Returns a {@link Chain} that reflects the addition of an {@link
-   * InterceptorFunction} built from the supplied arguments.
+   * Returns a {@link Chain} that reflects the addition of an {@link InterceptorFunction} built from the supplied
+   * arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param method a {@link Method} representing an interceptor
-   * method; must not be {@code null}
+   * @param method a {@link Method} representing an interceptor method; must not be {@code null}
    *
-   * @param interceptorSupplier a {@link Supplier} of an interceptor
-   * on which the supplied {@code method} will effectively be invoked;
-   * may be {@code null}
+   * @param interceptorSupplier a {@link Supplier} of an interceptor on which the supplied {@code method} will
+   * effectively be invoked; may be {@code null}
    *
-   * @return a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}
+   * @return a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}
    *
-   * @exception NullPointerException if {@code lookup} or {@code
-   * method} is {@code null}
+   * @exception NullPointerException if {@code lookup} or {@code method} is {@code null}
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #interceptorFunction(Lookup, Method)
    *
@@ -358,48 +375,40 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}.
+   * Returns a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}.
    *
-   * @param function the {@link InterceptorFunction}; may be {@code
-   * null} in which case this {@link Chain} will be returned
+   * @param function the {@link InterceptorFunction}; may be {@code null} in which case this {@link Chain} will be
+   * returned
    *
-   * @return a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}
+   * @return a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public final Chain plusInterceptorFunction(final InterceptorFunction function) {
-    // Note to future maintainers: Don't get clever and pass
-    // this::getTarget instead of null as the trailing parameter.
+    // Note to future maintainers: Don't get clever and pass this::getTarget instead of null as the trailing parameter.
     return this.plusInterceptorFunction(function, null);
   }
 
   /**
-   * Returns a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}.
+   * Returns a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}.
    *
-   * @param function the {@link InterceptorFunction}; may be {@code
-   * null} in which case this {@link Chain} will be returned
+   * @param function the {@link InterceptorFunction}; may be {@code null} in which case this {@link Chain} will be
+   * returned
    *
-   * @param interceptorSupplier a {@link Supplier} of an interceptor;
-   * may be {@code null} in which case an appropriate representation
-   * of the {@link #getTarget()} method will be used instead
+   * @param interceptorSupplier a {@link Supplier} of an interceptor; may be {@code null} in which case an appropriate
+   * representation of the {@link #getTarget()} method will be used instead
    *
-   * @return a {@link Chain} that reflects the addition of the
-   * supplied {@link InterceptorFunction}
+   * @return a {@link Chain} that reflects the addition of the supplied {@link InterceptorFunction}
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public final Chain plusInterceptorFunction(final InterceptorFunction function, final Supplier<?> interceptorSupplier) {
     if (function == null) {
@@ -421,14 +430,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@link
-   * Constructor}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@link Constructor}.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param constructor a {@link Constructor}; must not be {@code
-   * null}
+   * @param constructor a {@link Constructor}; must not be {@code null}
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -438,8 +445,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConstructor(Function, Supplier)
    *
@@ -452,7 +458,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     try {
       final Function<Object[], Object> terminalConstructor = terminalConstructor(lookup, lookup.unreflectConstructor(constructor));
       return
-        this.withTerminalFunction((ignoredTarget, parameters) -> terminalConstructor.apply(parameters),
+        this.withTerminalFunction((x, p) -> terminalConstructor.apply(p),
                                   true,
                                   () -> constructor,
                                   null,
@@ -463,9 +469,8 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@link
-   * Method}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@link Method}.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
@@ -479,8 +484,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConstructor(Function, Supplier)
    *
@@ -493,7 +497,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     try {
       final Function<Object[], Object> terminalConstructor = terminalConstructor(lookup, lookup.unreflect(factoryMethod));
       return
-        this.withTerminalFunction((ignoredTarget, parameters) -> terminalConstructor.apply(parameters),
+        this.withTerminalFunction((x, p) -> terminalConstructor.apply(p),
                                   true,
                                   null,
                                   () -> factoryMethod,
@@ -504,9 +508,8 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@link
-   * MethodHandle}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@link MethodHandle}.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
@@ -520,8 +523,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConstructor(Function, Supplier)
    *
@@ -545,15 +547,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied constructing {@link
-   * Function}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * constructing {@link Function}.
    *
-   * @param constructor a constructing {@link Function}; must not be
-   * {@code null}
+   * @param constructor a constructing {@link Function}; must not be {@code null}
    *
-   * @exception NullPointerException if {@code constructor} is {@code
-   * null}
+   * @exception NullPointerException if {@code constructor} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -561,8 +560,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConstructor(Function, Supplier)
    */
@@ -571,19 +569,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied constructing {@link
-   * Function}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * constructing {@link Function}.
    *
-   * @param constructor a constructing {@link Function}; must not be
-   * {@code null}
+   * @param constructor a constructing {@link Function}; must not be {@code null}
    *
-   * @param constructorSupplier a {@link Supplier} that will
-   * {@linkplain Supplier#get() supply} a {@link Constructor} when the
-   * {@link #getConstructor()} method is invoked; may be {@code null}
+   * @param constructorSupplier a {@link Supplier} that will {@linkplain Supplier#get() supply} a {@link Constructor}
+   * when the {@link #getConstructor()} method is invoked; may be {@code null}
    *
-   * @exception NullPointerException if {@code constructor} is {@code
-   * null}
+   * @exception NullPointerException if {@code constructor} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -591,15 +585,14 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
   public final Chain withTerminalConstructor(final Function<? super Object[], ?> constructor,
                                              final Supplier<? extends Constructor<?>> constructorSupplier) {
     return
-      this.withTerminalFunction((ignoredTarget, parameters) -> constructor.apply(parameters),
+      this.withTerminalFunction((x, p) -> constructor.apply(p),
                                 true,
                                 constructorSupplier,
                                 null,
@@ -607,14 +600,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@link
-   * Method}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@link Method}.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param method the terminal {@link Method}; must not be {@code
-   * null}
+   * @param method the terminal {@link Method}; must not be {@code null}
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -624,8 +615,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
@@ -644,14 +634,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@link
-   * MethodHandle}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@link MethodHandle}.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param mh the terminal {@link MethodHandle}; must not be {@code
-   * null}
+   * @param mh the terminal {@link MethodHandle}; must not be {@code null}
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -661,8 +649,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
@@ -684,15 +671,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@code
-   * terminalConsumer}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@code terminalConsumer}.
    *
-   * @param terminalConsumer the terminal {@link Consumer}; must not
-   * be {@code null}
+   * @param terminalConsumer the terminal {@link Consumer}; must not be {@code null}
    *
-   * @exception NullPointerException if {@code terminalConsumer} is
-   * {@code null}
+   * @exception NullPointerException if {@code terminalConsumer} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -700,8 +684,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConsumer(Consumer, Supplier)
    */
@@ -710,19 +693,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@code
-   * terminalConsumer}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@code terminalConsumer}.
    *
-   * @param terminalConsumer the terminal {@link Consumer}; must not
-   * be {@code null}
+   * @param terminalConsumer the terminal {@link Consumer}; must not be {@code null}
    *
-   * @param methodSupplier a {@link Supplier} that will {@linkplain
-   * Supplier#get() supply} a {@link Method} when the {@link
-   * #getMethod()} method is invoked; may be {@code null}
+   * @param methodSupplier a {@link Supplier} that will {@linkplain Supplier#get() supply} a {@link Method} when the
+   * {@link #getMethod()} method is invoked; may be {@code null}
    *
-   * @exception NullPointerException if {@code terminalConsumer} is
-   * {@code null}
+   * @exception NullPointerException if {@code terminalConsumer} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -730,16 +709,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #getMethod()
    */
   public final Chain withTerminalConsumer(final Consumer<? super Object> terminalConsumer,
                                           final Supplier<? extends Method> methodSupplier) {
     return
-      this.withTerminalFunction((target, ignoredParameters) -> {
-          terminalConsumer.accept(target);
+      this.withTerminalFunction((t, x) -> {
+          terminalConsumer.accept(t);
           return null;
         },
         false,
@@ -749,15 +727,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@code
-   * terminalFunction}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@code terminalFunction}.
    *
-   * @param selfContainedTerminalFunction the terminal function; must
-   * not be {@code null}
+   * @param selfContainedTerminalFunction the terminal function; must not be {@code null}
    *
-   * @exception NullPointerException if {@code
-   * selfContainedTerminalFunction} is {@code null}
+   * @exception NullPointerException if {@code selfContainedTerminalFunction} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -765,25 +740,21 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
   private final Chain withTerminalFunction(final Function<? super Object[], ?> selfContainedTerminalFunction) {
-    return this.withTerminalFunction((ignoredTarget, parameters) -> selfContainedTerminalFunction.apply(parameters), null);
+    return this.withTerminalFunction((x, p) -> selfContainedTerminalFunction.apply(p), null);
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@code
-   * terminalFunction}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@code terminalFunction}.
    *
-   * @param terminalFunction the terminal function; must not be {@code
-   * null}
+   * @param terminalFunction the terminal function; must not be {@code null}
    *
-   * @exception NullPointerException if {@code terminalFunction} is
-   * {@code null}
+   * @exception NullPointerException if {@code terminalFunction} is {@code null}
    *
    * @return a {@link Chain}
    *
@@ -791,8 +762,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
@@ -801,28 +771,23 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain
-   * #isTerminated() terminated} with the supplied {@code
-   * terminalFunction}.
+   * Returns <strong>a copy of</strong> this {@link Chain} {@linkplain #isTerminated() terminated} with the supplied
+   * {@code terminalFunction}.
    *
-   * @param terminalFunction the terminal function; must not be {@code
-   * null}
+   * @param terminalFunction the terminal function; must not be {@code null}
    *
-   * @param methodSupplier a {@link Supplier} that will {@linkplain
-   * Supplier#get() supply} a {@link Method} when the {@link
-   * #getMethod()} method is invoked; may be {@code null}
+   * @param methodSupplier a {@link Supplier} that will {@linkplain Supplier#get() supply} a {@link Method} when the
+   * {@link #getMethod()} method is invoked; may be {@code null}
    *
    * @return a {@link Chain}
    *
-   * @exception NullPointerException if {@code terminalFunction} is
-   * {@code null}
+   * @exception NullPointerException if {@code terminalFunction} is {@code null}
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #getMethod()
    */
@@ -859,12 +824,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns <strong>a copy of</strong> this {@link Chain} with the
-   * supplied {@code timerSupplier} backing its {@link #getTimer()}
-   * method.
+   * Returns <strong>a copy of</strong> this {@link Chain} with the supplied {@code timerSupplier} backing its {@link
+   * #getTimer()} method.
    *
-   * @param timerSupplier a {@link Supplier} whose {@link
-   * Supplier#get() get()} method will implement the {@link
+   * @param timerSupplier a {@link Supplier} whose {@link Supplier#get() get()} method will implement the {@link
    * #getTimer()} method; may be {@code null}
    *
    * @return a {@link Chain}
@@ -873,13 +836,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public final Chain withTimerSupplier(final Supplier<?> timerSupplier) {
     return
       this.copy(0,
-                null, // constructor supplier
+                this::getConstructor,
                 this::getMethod,
                 timerSupplier == null ? this::getTimer : timerSupplier,
                 this.terminalFunction,
@@ -896,16 +858,14 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   /**
    * Returns the size of this {@link Chain}.
    *
-   * <p>A {@link Chain}'s size consists of the sum of the number of
-   * its interceptor functions, plus {@code 1} if it {@linkplain
-   * #isTerminated() is terminated}.</p>
+   * <p>A {@link Chain}'s size consists of the sum of the number of its interceptor functions, plus {@code 1} if it
+   * {@linkplain #isTerminated() is terminated}.</p>
    *
    * @return ths size of this {@link Chain}; never negative
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #isTerminated()
    */
@@ -914,18 +874,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns {@code true} if this {@link Chain} {@linkplain
-   * #isTerminated() is not terminated} and {@linkplain #intercepts()
-   * does not intercept}.
+   * Returns {@code true} if this {@link Chain} {@linkplain #isTerminated() is not terminated} and {@linkplain
+   * #intercepts() does not intercept}.
    *
-   * @return {@code true} if this {@link Chain} {@linkplain
-   * #isTerminated() is not terminated} and {@linkplain #intercepts()
-   * does not intercept}
+   * @return {@code true} if this {@link Chain} {@linkplain #isTerminated() is not terminated} and {@linkplain
+   * #intercepts() does not intercept}
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #isTerminated()
    *
@@ -936,18 +893,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns {@code true} if this {@link Chain} is terminated with a
-   * {@linkplain #withTerminalFunction(BiFunction, Supplier) terminal
-   * function}.
+   * Returns {@code true} if this {@link Chain} is terminated with a {@linkplain #withTerminalFunction(BiFunction,
+   * Supplier) terminal function}.
    *
-   * @return {@code true} if this {@link Chain} is terminated with a
-   * {@linkplain #withTerminalFunction(BiFunction, Supplier) terminal
-   * function}
+   * @return {@code true} if this {@link Chain} is terminated with a {@linkplain #withTerminalFunction(BiFunction,
+   * Supplier) terminal function}
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalFunction(BiFunction, Supplier)
    */
@@ -956,25 +910,21 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns {@code true} if this {@link Chain} has at least one
-   * {@link InterceptorFunction} and hence will actually perform an
-   * interception.
+   * Returns {@code true} if this {@link Chain} has at least one {@link InterceptorFunction} and hence will actually
+   * perform an interception.
    *
-   * @return {@code true} if this {@link Chain} will perform an
-   * interception; {@code false} otherwise
+   * @return {@code true} if this {@link Chain} will perform an interception; {@code false} otherwise
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public final boolean intercepts() {
     return !this.interceptorFunctions.isEmpty();
   }
 
   /**
-   * If a {@link Constructor} is available, returns it, or {@code
-   * null}.
+   * If a {@link Constructor} is available, returns it, or {@code null}.
    *
    * @return a {@link Constructor}, or {@code null}
    *
@@ -982,8 +932,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   @Override // InvocationContext
   public final Constructor<?> getConstructor() {
@@ -991,8 +940,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * If a {@link Method} is available, returns it, or {@code
-   * null}.
+   * If a {@link Method} is available, returns it, or {@code null}.
    *
    * @return a {@link Method}, or {@code null}
    *
@@ -1000,8 +948,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   @Override // InvocationContext
   public final Method getMethod() {
@@ -1011,14 +958,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   /**
    * If a timer is available, returns it, or {@code null}.
    *
+   * <p>A timer is rarely available.</p>
+   *
    * @return a timer, or {@code null}
    *
-   * @nullability This method may return {@code null}.
+   * @nullability This method often returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   @Override // InvocationContext
   public final Object getTimer() {
@@ -1026,25 +974,23 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a mutable {@link Map} of context data for the current
-   * invocation or interception event.
+   * Returns a mutable, thread-safe {@link ConcurrentMap} of context data for the current invocation or interception
+   * event.
    *
-   * @return a mutable {@link Map} of context data for the current
-   * invocation or interception event
+   * @return a mutable, thread-safe {@link ConcurrentMap} of context data for the current invocation or interception
+   * event
    *
    * @nullability This method never returns {@code null}.
    *
-   * @idempotency This method is idempotent but not necessarily
-   * deterministic.
+   * @idempotency This method is idempotent but not necessarily deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see InvocationContext#getContextData()
    */
   @Override // InvocationContext
-  public final Map<String, Object> getContextData() {
-    Map<String, Object> map = this.contextData; // volatile read
+  public final ConcurrentMap<String, Object> getContextData() {
+    ConcurrentMap<String, Object> map = this.contextData; // volatile read
     if (map == null) {
       map = new ConcurrentHashMap<>();
       if (!CONTEXT_DATA.compareAndSet(this, null, map)) { // volatile write
@@ -1055,17 +1001,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns the parameters for this {@link Chain}.
+   * Returns <strong>a copy</strong> of the parameters for this {@link Chain}.
    *
-   * @return the parameters for this {@link Chain}
+   * @return a copy of the parameters for this {@link Chain}
    *
    * @nullability This method never returns {@code null}.
    *
-   * @idempotency This method is idempotent but not necessarily
-   * deterministic.
+   * @idempotency This method is idempotent but not necessarily deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #setParameters(Object[])
    *
@@ -1077,32 +1021,27 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     if (supplier == null) {
       return EMPTY_OBJECT_ARRAY;
     } else {
-      Object[] returnValue = supplier.get();
-      if (returnValue == null || returnValue.length <= 0) {
-        returnValue = EMPTY_OBJECT_ARRAY;
-      } else {
-        returnValue = returnValue.clone();
-      }
-      return returnValue;
+      final Object[] returnValue = supplier.get();
+      return
+        returnValue == null || returnValue.length <= 0 ? EMPTY_OBJECT_ARRAY : returnValue.clone();
     }
   }
 
   /**
-   * Sets the parameters for this {@link Chain}.
+   * Sets the parameters for this {@link Chain} to <strong>a copy</strong> of the supplied parameters array.
    *
-   * @param parameters the new parameters; may be {@code null} in
-   * which case an empty {@link Object} array will be used instead
+   * @param parameters the new parameters to copy; may be {@code null} in which case an empty {@link Object} array will
+   * be used instead
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #getParameters()
    */
   @Override // InvocationContext
   public final void setParameters(final Object[] parameters) {
-    if (parameters == null || parameters.length == 0) {
+    if (parameters == null || parameters.length <= 0) {
       this.parameters = Chain::emptyObjectArray; // volatile write
     } else {
       final Object[] clonedParameters = parameters.clone();
@@ -1111,16 +1050,14 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Indirectly sets the {@linkplain #getParameters() parameters} of
-   * this {@link Chain} by way of the supplied {@link Supplier}.
+   * Indirectly sets the {@linkplain #getParameters() parameters} of this {@link Chain} by way of the supplied {@link
+   * Supplier}.
    *
-   * @param parameters a {@link Supplier} of the new parameters; may
-   * be {@code null}
+   * @param parameters a {@link Supplier} of the new parameters; may be {@code null}
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #setParameters(Object[])
    *
@@ -1137,11 +1074,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @nullability This method may return {@code null}.
    *
-   * @idempotency This method is idempotent but not necessarily
-   * deterministic.
+   * @idempotency This method is idempotent but not necessarily deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see InvocationContext#getTarget()
    */
@@ -1159,10 +1094,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
-  @Override
+  @Override // Cloneable
   public final Chain clone() {
     return this.copy(0);
   }
@@ -1183,8 +1117,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                            final BiFunction<? super Object, ? super Object[], ?> terminalFunction,
                            final boolean setTarget) {
     final List<? extends InterceptorFunction> interceptorFunctions;
-    // Defensive copying of this map is deliberately not handled by
-    // the constructor so we do it here.
+    // Defensive copying of this map is deliberately not handled by the constructor so we do it here.
     final IdentityHashMap<? extends InterceptorFunction, ? extends Supplier<?>> interceptorSuppliers =
       new IdentityHashMap<>(this.interceptorSuppliers);
     final int functionCount = this.interceptorFunctions.size();
@@ -1241,12 +1174,11 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * <em>Primes</em> this {@link Chain} by calling {@link
-   * Supplier#get()} on each of its interceptor suppliers, priming
+   * <em>Primes</em> this {@link Chain} by calling {@link Supplier#get()} on each of its interceptor suppliers, priming
    * them for subsequent use.
    *
-   * <p>After an invocation of this method, the {@link #isPrimed()}
-   * method will forever afterwards return {@code true}.</p>
+   * <p>After an invocation of this method, the {@link #isPrimed()} method will forever afterwards return {@code
+   * true}.</p>
    *
    * @return this {@link Chain}
    *
@@ -1254,14 +1186,22 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #isPrimed()
    */
   public final Chain prime() {
     if (PRIMED.compareAndSet(this, false, true)) { // volatile semantics
-      this.interceptorSuppliers.forEach(Chain::prime);
+      final Collection<Supplier<?>> seen = new HashSet<>();
+      try {
+        for (final Supplier<?> s : this.interceptorSuppliers.values()) {
+          if (seen.add(s)) {
+            s.get();
+          }
+        }
+      } finally {
+        seen.clear();
+      }
     }
     return this;
   }
@@ -1269,18 +1209,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   /**
    * Returns {@code true} if this {@link Chain} is primed.
    *
-   * <p>A {@link Chain} is <em>primed</em> after the {@link #prime()}
-   * method has been called successfully.</p>
+   * <p>A {@link Chain} is <em>primed</em> after the {@link #prime()} method has been called successfully.</p>
    *
-   * <p>Priming a {@link Chain} initializes its interceptor
-   * suppliers.</p>
+   * <p>Priming a {@link Chain} initializes its interceptor suppliers.</p>
    *
    * @return {@code true} if this {@link Chain} is primed
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #prime()
    */
@@ -1303,8 +1240,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Proceeds to the next interception in the {@link Chain} and
-   * returns any result.
+   * Proceeds to the next interception in the {@link Chain} and returns any result.
    *
    * @return any result of the interception
    *
@@ -1312,11 +1248,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @nullability This method may return {@code null}.
    *
-   * @idempotency No guarantees are made about idempotency or
-   * determinism.
+   * @idempotency No guarantees are made about idempotency or determinism.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see InvocationContext#proceed()
    */
@@ -1329,12 +1263,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
         this.target.set(returnValue);
       }
     } else {
-      final Chain chain = this.copy(1);
-      assert this.getTarget() == chain.getTarget();
       final InterceptorFunction interceptorFunction = this.interceptorFunctions.get(0);
       final Supplier<?> interceptorSupplier = this.interceptorSuppliers.get(interceptorFunction);
+      final InvocationContext ic = this.copy(1);
+      assert this.getTarget() == ic.getTarget(); // same AtomicReference
       returnValue =
-        interceptorFunction.intercept(interceptorSupplier == null ? chain.getTarget() : interceptorSupplier.get(), chain);
+        interceptorFunction.intercept(interceptorSupplier == null ? ic.getTarget() : interceptorSupplier.get(), ic);
     }
     return returnValue;
   }
@@ -1345,23 +1279,6 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    */
 
 
-  /**
-   * Calls {@link Supplier#get()} on the supplied {@link Supplier} to
-   * "prime" it.
-   *
-   * @param ignored ignored; required to make this method look like a
-   * {@link BiConsumer}
-   *
-   * @param supplier the {@link Supplier} to prime; must not be {@code
-   * null}
-   *
-   * @exception NullPointerException if {@code supplier} is {@code
-   * null}
-   */
-  private static final void prime(final Object ignored, final Supplier<?> supplier) {
-    supplier.get();
-  }
-
   private static final Object[] emptyObjectArray() {
     return EMPTY_OBJECT_ARRAY;
   }
@@ -1371,21 +1288,16 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with
-   * {@link Constructor Constructor.class} and the supplied {@link
-   * MethodHandle} as arguments, and returns the result.
+   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with {@link Constructor Constructor.class} and the
+   * supplied {@link MethodHandle} as arguments, and returns the result.
    *
-   * @param mh the {@link MethodHandle} representing a constructor;
-   * must not be {@code null}
+   * @param mh the {@link MethodHandle} representing a constructor; must not be {@code null}
    *
-   * @return a {@link Constructor} representing the supplied {@link
-   * MethodHandle}
+   * @return a {@link Constructor} representing the supplied {@link MethodHandle}
    *
-   * @exception ClassCastException if {@code mh} does not represent a
-   * constructor
+   * @exception ClassCastException if {@code mh} does not represent a constructor
    *
-   * @exception IllegalArgumentException if {@code mh} is not a direct
-   * method handle
+   * @exception IllegalArgumentException if {@code mh} is not a direct method handle
    *
    * @exception NullPointerException if {@code mh} is {@code null}
    *
@@ -1393,30 +1305,23 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
-  @Convenience
   public static final Constructor<?> constructor(final MethodHandle mh) {
     return MethodHandles.reflectAs(Constructor.class, mh);
   }
 
   /**
-   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with
-   * {@link Method Method.class} and the supplied {@link MethodHandle}
-   * as arguments, and returns the result.
+   * Invokes {@link MethodHandles#reflectAs(Class, MethodHandle)} with {@link Method Method.class} and the supplied
+   * {@link MethodHandle} as arguments, and returns the result.
    *
-   * @param mh the {@link MethodHandle} representing a method; must
-   * not be {@code null}
+   * @param mh the {@link MethodHandle} representing a method; must not be {@code null}
    *
-   * @return a {@link Method} representing the supplied {@link
-   * MethodHandle}
+   * @return a {@link Method} representing the supplied {@link MethodHandle}
    *
-   * @exception ClassCastException if {@code mh} does not represent a
-   * method
+   * @exception ClassCastException if {@code mh} does not represent a method
    *
-   * @exception IllegalArgumentException if {@code mh} is not a direct
-   * method handle
+   * @exception IllegalArgumentException if {@code mh} is not a direct method handle
    *
    * @exception NullPointerException if {@code mh} is {@code null}
    *
@@ -1424,40 +1329,32 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
-  @Convenience
   public static final Method method(final MethodHandle mh) {
     return MethodHandles.reflectAs(Method.class, mh);
   }
 
   /**
-   * Returns an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments.
+   * Returns an {@link InterceptorFunction} representing the method designated by the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param targetClass the {@link Class} hosting the method; must not
-   * be {@code null}
+   * @param targetClass the {@link Class} hosting the method; must not be {@code null}
    *
-   * @param methodName the name of the method; must not be {@code
-   * null}
+   * @param methodName the name of the method; must not be {@code null}
    *
-   * @return an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments
+   * @return an {@link InterceptorFunction} representing the method designated by the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs while looking
-   * up the relevant method
+   * @exception InterceptorException if an error occurs while looking up the relevant method
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup,
                                                               final Class<?> targetClass,
@@ -1467,36 +1364,31 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
         interceptorFunction(lookup,
                             lookup.findVirtual(targetClass,
                                                methodName,
-                                               MethodType.methodType(Object.class,
-                                                                     InvocationContext.class)));
+                                               INTERCEPTORFUNCTION_METHOD_TYPE));
     } catch (final IllegalAccessException | NoSuchMethodException e) {
       throw new InterceptorException(e.getMessage(), e);
     }
   }
 
   /**
-   * Returns an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments.
+   * Returns an {@link InterceptorFunction} representing the method designated by the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
    * @param method a {@link Method}; must not be {@code null}
    *
-   * @return an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments
+   * @return an {@link InterceptorFunction} representing the method designated by the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs while
-   * {@linkplain Lookup#unreflect(Method) unreflecting} the relevant
-   * method
+   * @exception InterceptorException if an error occurs while {@linkplain Lookup#unreflect(Method) unreflecting} the
+   * relevant method
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup, final Method method) {
     try {
@@ -1507,42 +1399,37 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments.
+   * Returns an {@link InterceptorFunction} representing the method designated by the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
    * @param mh a {@link MethodHandle}; must not be null}
    *
-   * @return an {@link InterceptorFunction} representing the method
-   * designated by the supplied arguments
+   * @return an {@link InterceptorFunction} representing the method designated by the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs while looking
-   * up the relevant method
+   * @exception InterceptorException if an error occurs while looking up the relevant method
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    */
   public static final InterceptorFunction interceptorFunction(final Lookup lookup, final MethodHandle mh) {
     final MethodType methodType = mh.type();
     final String methodName;
-    final MethodType signature;
     final MethodType factoryType;
-    final boolean invokeExact;
+    final MethodType signature;
     if (void.class.equals(methodType.returnType())) {
       methodName = "execute";
-      factoryType = MethodType.methodType(InterceptorProcedure.class);
-      signature = MethodType.methodType(void.class, List.of(Object.class, InvocationContext.class));
+      factoryType = INTERCEPTORPROCEDURE_FACTORY_TYPE;
+      signature = INTERCEPTORPROCEDURE_EXECUTE_SIGNATURE;
     } else {
       methodName = "intercept";
-      factoryType = MethodType.methodType(InterceptorFunction.class);
-      signature = MethodType.methodType(Object.class, List.of(Object.class, InvocationContext.class));
+      factoryType = INTERCEPTORFUNCTION_FACTORY_TYPE;
+      signature = INTERCEPTORFUNCTION_INTERCEPT_SIGNATURE;
     }
     try {
       final MethodHandle factory =
@@ -1553,11 +1440,10 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                                       mh, // better conform to signature
                                       methodType) // signature enforced dynamically at runtime
         .getTarget();
-      if (InterceptorFunction.class.equals(factoryType.returnType())) {
-        return (InterceptorFunction)factory.invokeExact();
-      } else {
-        return (InterceptorProcedure)factory.invokeExact();
-      }
+      return
+        factoryType.returnType() == InterceptorFunction.class ?
+        (InterceptorFunction)factory.invokeExact() :
+        (InterceptorProcedure)factory.invokeExact();
     } catch (final RuntimeException | Error e) {
       throw e;
     } catch (final Exception e) {
@@ -1571,24 +1457,20 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments.
+   * Returns a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param targetClass the {@link Class} hosting the desired method;
-   * must not be {@code null}
+   * @param targetClass the {@link Class} hosting the desired method; must not be {@code null}
    *
-   * @param methodName the name of the method to lookup; must not be
+   * @param methodName the name of the method to lookup; must not be {@code null}
+   *
+   * @param methodType a {@link MethodType} representing the desired method's signature and return type; must not be
    * {@code null}
    *
-   * @param methodType a {@link MethodType} representing the desired
-   * method's signature and return type; must not be {@code null}
-   *
-   * @return a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments
+   * @return a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -1620,19 +1502,16 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments.
+   * Returns a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments.
    *
-   * @param targetClass the {@link Class} {@linkplain
-   * Lookup#privateLookupIn(Class, Lookup) in which to create a
-   * private <code>Lookup</code>}; must not be {@code null}
+   * @param targetClass the {@link Class} {@linkplain Lookup#privateLookupIn(Class, Lookup) in which to create a private
+   * <code>Lookup</code>}; must not be {@code null}
    *
    * @param mh a {@link MethodHandle}; must not be {@code null}
    *
-   * @return a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments
+   * @return a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -1655,17 +1534,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments.
+   * Returns a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
    * @param mh a {@link MethodHandle}; must not be {@code null}
    *
-   * @return a {@link BiFunction} suitable for supplying to the {@link
-   * #withTerminalFunction(BiFunction, Supplier)} method, built from
-   * the supplied arguments
+   * @return a {@link BiFunction} suitable for supplying to the {@link #withTerminalFunction(BiFunction, Supplier)}
+   * method, built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
@@ -1684,25 +1561,23 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     if (parameterCount <= 0) {
       throw new IllegalArgumentException("mh.methodType().parameterCount() <= 0: " + mh);
     } else if (parameterCount == 1) {
-      // The sole parameter is assumed to be the receiver type, so the
-      // virtual method the handle represents has no parameters.
+      // The sole parameter is assumed to be the receiver type, so the virtual method the handle represents has no
+      // parameters.
       if (void.class.equals(methodType.returnType())) {
-        // The virtual method the handle represents has no parameters
-        // and returns nothing, so is like a Runnable.  We have to use
-        // Consumer because of the sole receiver parameter.
-        final MethodType consumerAcceptSignature = MethodType.methodType(void.class, List.of(Object.class));
+        // The virtual method the handle represents has no parameters and returns nothing, so is like a Runnable.  We
+        // have to use Consumer::accept because of the sole receiver parameter.
         try {
           final Consumer<? super Object> consumer =
             (Consumer<? super Object>)LambdaMetafactory.metafactory(lookup,
                                                                     "accept",
-                                                                    MethodType.methodType(Consumer.class),
-                                                                    consumerAcceptSignature,
+                                                                    CONSUMER_FACTORY_TYPE,
+                                                                    CONSUMER_ACCEPT_SIGNATURE,
                                                                     mh,
                                                                     methodType)
             .getTarget()
             .invokeExact();
-          returnValue = (target, parameters) -> {
-            consumer.accept(target);
+          returnValue = (t, x) -> {
+            consumer.accept(t);
             return null;
           };
         } catch (final RuntimeException | Error e) {
@@ -1716,53 +1591,49 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
           throw new AssertionError(e.getMessage(), e);
         }
       } else {
-        // The virtual method the handle represents has no parameters
-        // and returns something, so is like a Supplier<?>.  We have
-        // to use Function<? super Object, ?> because of the receiver
-        // parameter.
-        final MethodType functionApplySignature = MethodType.methodType(Object.class, List.of(Object.class));
+        // The virtual method the handle represents has no parameters and returns something, so is like a Supplier<?>.
+        // We have to use Function::<? super Object, ?>apply because of the receiver parameter.
         try {
           final Function<? super Object, ?> function =
             (Function<? super Object, ?>)LambdaMetafactory.metafactory(lookup,
                                                                        "apply",
-                                                                       MethodType.methodType(Function.class),
-                                                                       functionApplySignature,
+                                                                       FUNCTION_FACTORY_TYPE,
+                                                                       FUNCTION_APPLY_SIGNATURE,
                                                                        mh,
                                                                        methodType)
             .getTarget()
             .invokeExact();
-          returnValue = (target, parameters) -> function.apply(target);
+          returnValue = (t, x) -> function.apply(t);
         } catch (final RuntimeException | Error e) {
           throw e;
         } catch (final Exception e) {
+          if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+          }
           throw new InterceptorException(e.getMessage(), e);
         } catch (final Throwable e) {
           throw new AssertionError(e.getMessage(), e);
         }
       }
     } else if (parameterCount == 2 && Object[].class.equals(methodType.parameterType(1))) {
-      // The virtual method the handle represents has one parameter of
-      // type Object[].class.  The first of the two parameters is the
-      // receiver type.
+      // The virtual method the handle represents has one parameter of type Object[].class.  The first of the two
+      // parameters is the receiver type.
       if (void.class.equals(methodType.returnType())) {
-        // The virtual method the handle represents takes one
-        // parameter of type Object[].class and returns nothing, so is
-        // like a Consumer<? super Object[]>.  We have to use
-        // BiConsumer<? super Object, ? super Object[]> because of the
-        // receiver parameter.
+        // The virtual method the handle represents takes one parameter of type Object[].class and returns nothing, so
+        // is like a Consumer<? super Object[]>.  We have to use BiConsumer::<? super Object, ? super Object[]>accept
+        // because of the receiver parameter.
         try {
-          final MethodType biConsumerAcceptSignature = MethodType.methodType(void.class, List.of(Object.class, Object.class));
           final BiConsumer<? super Object, ? super Object[]> biConsumer =
             (BiConsumer<? super Object, ? super Object[]>)LambdaMetafactory.metafactory(lookup,
                                                                                         "accept",
-                                                                                        MethodType.methodType(BiConsumer.class), // returns BiConsumer and captures no variables
-                                                                                        biConsumerAcceptSignature, // compiled/erased signature of BiConsumer::accept
+                                                                                        BICONSUMER_FACTORY_TYPE, // returns BiConsumer and captures no variables
+                                                                                        BICONSUMER_ACCEPT_SIGNATURE,
                                                                                         mh, // better conform to signature
                                                                                         methodType) // signature enforced dynamically at runtime (same as compiled/erased in this case)
             .getTarget()
             .invokeExact();
-          returnValue = (target, parameters) -> {
-            biConsumer.accept(target, parameters);
+          returnValue = (t, p) -> {
+            biConsumer.accept(t, p);
             return null;
           };
         } catch (final RuntimeException | Error e) {
@@ -1776,18 +1647,15 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
           throw new AssertionError(e.getMessage(), e);
         }
       } else {
-        // The virtual method the handle represents takes one
-        // parameter of type Object[].class and returns something, so
-        // is like a Function<? super Object[], ?>.  We have to use
-        // BiFunction<? super Object, ? super Object[], ?> because of
-        // the receiver parameter.
+        // The virtual method the handle represents takes one parameter of type Object[].class and returns something, so
+        // is like a Function<? super Object[], ?>.  We have to use BiFunction::<? super Object, ? super Object[],
+        // ?>apply because of the receiver parameter.
         try {
-          final MethodType biFunctionApplySignature = MethodType.methodType(Object.class, List.of(Object.class, Object.class));
           returnValue =
             (BiFunction<Object, Object[], Object>)LambdaMetafactory.metafactory(lookup,
                                                                                 "apply",
-                                                                                MethodType.methodType(BiFunction.class), // returns BiFunction and captures no variables
-                                                                                biFunctionApplySignature, // compiled/erased signature of BiFunction::apply
+                                                                                BIFUNCTION_FACTORY_TYPE, // returns BiFunction and captures no variables
+                                                                                BIFUNCTION_APPLY_SIGNATURE, // compiled/erased signature of BiFunction::apply
                                                                                 mh, // better conform to signature
                                                                                 methodType) // signature enforced dynamically at runtime
             .getTarget()
@@ -1805,9 +1673,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
       }
     } else {
       final MethodHandle spreader = mh.asSpreader(Object[].class, parameterCount - 1);
-      returnValue = (target, parameters) -> {
+      returnValue = (t, p) -> {
         try {
-          return spreader.invoke(target, parameters);
+          return spreader.invoke(t, p);
         } catch (final RuntimeException | Error e) {
           throw e;
         } catch (final Exception e) {
@@ -1824,33 +1692,27 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param targetClass the {@link Class} hosting the constructor;
-   * must not be {@code null}
+   * @param targetClass the {@link Class} hosting the constructor; must not be {@code null}
    *
-   * @param parameters the constructor's parameters; must not be
-   * {@code null}
+   * @param parameters the constructor's parameters; must not be {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs looking up the
-   * constructor
+   * @exception InterceptorException if an error occurs looking up the constructor
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #terminalConstructor(Lookup, Class, MethodType)
    *
@@ -1867,33 +1729,28 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param targetClass the {@link Class} hosting the constructor;
-   * must not be {@code null}
+   * @param targetClass the {@link Class} hosting the constructor; must not be {@code null}
    *
-   * @param methodTypeWithVoidReturnType a {@link MethodType}
-   * describing the constructor's parameters; must not be {@code null}
+   * @param methodTypeWithVoidReturnType a {@link MethodType} describing the constructor's parameters; must not be
+   * {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs looking up the
-   * constructor
+   * @exception InterceptorException if an error occurs looking up the constructor
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #terminalConstructor(Lookup, Constructor)
    *
@@ -1905,47 +1762,37 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                                                                      final Class<?> targetClass,
                                                                      final MethodType methodTypeWithVoidReturnType) {
     try {
-      return
-        terminalConstructor(lookup,
-                            lookup.findConstructor(targetClass, methodTypeWithVoidReturnType));
+      return terminalConstructor(lookup, lookup.findConstructor(targetClass, methodTypeWithVoidReturnType));
     } catch (final IllegalAccessException | NoSuchMethodException e) {
       throw new InterceptorException(e.getMessage(), e);
     }
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param targetClass the {@link Class} hosting the method;
-   * must not be {@code null}
+   * @param targetClass the {@link Class} hosting the method; must not be {@code null}
    *
-   * @param factoryMethodName the name of a virtual method to look up
-   * that will create an instance of the supplied {@code methodType}'s
-   * {@linkplain MethodType#returnType() return type}; must not be
-   * {@code null}
+   * @param factoryMethodName the name of a virtual method to look up that will create an instance of the supplied
+   * {@code methodType}'s {@linkplain MethodType#returnType() return type}; must not be {@code null}
    *
-   * @param methodType a {@link MethodType} describing the method;
-   * must not be {@code null}
+   * @param methodType a {@link MethodType} describing the method; must not be {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs looking up the
-   * method
+   * @exception InterceptorException if an error occurs looking up the method
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #terminalConstructor(Lookup, MethodHandle)
    *
@@ -1960,40 +1807,33 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
                                                                      final String factoryMethodName,
                                                                      final MethodType methodType) {
     try {
-      return
-        terminalConstructor(lookup,
-                            lookup.findVirtual(targetClass, factoryMethodName, methodType));
+      return terminalConstructor(lookup, lookup.findVirtual(targetClass, factoryMethodName, methodType));
     } catch (final IllegalAccessException | NoSuchMethodException e) {
       throw new InterceptorException(e.getMessage(), e);
     }
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param constructor a {@link Constructor} to {@linkplain
-   * Lookup#unreflectConstructor(Constructor) unreflect}; must not be
-   * {@code null}
+   * @param constructor a {@link Constructor} to {@linkplain Lookup#unreflectConstructor(Constructor) unreflect}; must
+   * not be {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs looking up the
-   * constructor
+   * @exception InterceptorException if an error occurs looking up the constructor
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #terminalConstructor(Lookup, MethodHandle)
    *
@@ -2008,30 +1848,25 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param method a factory {@link Method} to {@linkplain
-   * Lookup#unreflect(Method) unreflect}; must not be {@code null}
+   * @param method a factory {@link Method} to {@linkplain Lookup#unreflect(Method) unreflect}; must not be {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception InterceptorException if an error occurs looking up the
-   * constructor
+   * @exception InterceptorException if an error occurs looking up the constructor
    *
    * @nullability This method never returns {@code null}.
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #terminalConstructor(Lookup, MethodHandle)
    *
@@ -2046,25 +1881,21 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
   }
 
   /**
-   * Returns a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * Returns a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments.
    *
    * @param lookup a {@link Lookup}; must not be {@code null}
    *
-   * @param mh a {@link MethodHandle} representing a constructor or
-   * method that will create an object; must not be {@code null}
+   * @param mh a {@link MethodHandle} representing a constructor or method that will create an object; must not be
+   * {@code null}
    *
-   * @return a {@link Function} suitable for use as a {@linkplain
-   * #withTerminalConstructor(Function, Supplier) terminal
+   * @return a {@link Function} suitable for use as a {@linkplain #withTerminalConstructor(Function, Supplier) terminal
    * constructor} built from the supplied arguments
    *
    * @exception NullPointerException if any argument is {@code null}
    *
-   * @exception IllegalArgumentException if the supplied {@link
-   * MethodHandle}'s {@link MethodHandle#type()} return value has a
-   * {@linkplain MethodType#returnType() return type} of {@link Void}
-   * or {@code void}
+   * @exception IllegalArgumentException if the supplied {@link MethodHandle}'s {@link MethodHandle#type()} return value
+   * has a {@linkplain MethodType#returnType() return type} of {@link Void} or {@code void}
    *
    * @exception InterceptorException if any other error occurs
    *
@@ -2072,8 +1903,7 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
    *
    * @idempotency This method is idempotent and deterministic.
    *
-   * @threadsafety This method is safe for concurrent use by multiple
-   * threads.
+   * @threadsafety This method is safe for concurrent use by multiple threads.
    *
    * @see #withTerminalConstructor(Function, Supplier)
    */
@@ -2088,18 +1918,17 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
     if (parameterCount < 0) {
       throw new IllegalArgumentException("mh.methodType().parameterCount() <= 0: " + mh);
     } else if (parameterCount == 0) {
-      final MethodType supplierGetSignature = MethodType.methodType(Object.class);
       try {
         final Supplier<?> supplier =
           (Supplier<?>)LambdaMetafactory.metafactory(lookup,
                                                      "get",
-                                                     MethodType.methodType(Supplier.class),
-                                                     supplierGetSignature,
+                                                     SUPPLIER_FACTORY_TYPE,
+                                                     SUPPLIER_GET_SIGNATURE,
                                                      mh,
                                                      methodType)
           .getTarget()
           .invokeExact();
-        returnValue = parameters -> supplier.get();
+        returnValue = x -> supplier.get();
       } catch (final RuntimeException | Error e) {
         throw e;
       } catch (final Exception e) {
@@ -2111,13 +1940,12 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
         throw new AssertionError(e.getMessage(), e);
       }
     } else if (parameterCount == 1 && Object[].class.equals(methodType.parameterType(0))) {
-      final MethodType functionApplySignature = MethodType.methodType(Object.class, List.of(Object.class));
       try {
         returnValue =
           (Function<Object[], Object>)LambdaMetafactory.metafactory(lookup,
                                                                     "apply",
-                                                                    MethodType.methodType(Function.class),
-                                                                    functionApplySignature,
+                                                                    FUNCTION_FACTORY_TYPE,
+                                                                    FUNCTION_APPLY_SIGNATURE,
                                                                     mh,
                                                                     methodType)
           .getTarget()
@@ -2134,9 +1962,9 @@ public final class Chain implements Callable<Object>, Cloneable, InvocationConte
       }
     } else {
       final MethodHandle spreader = mh.asSpreader(Object[].class, parameterCount);
-      returnValue = parameters -> {
+      returnValue = p -> {
         try {
-          return spreader.invoke(parameters);
+          return spreader.invoke(p);
         } catch (final RuntimeException | Error e) {
           throw e;
         } catch (final Exception e) {

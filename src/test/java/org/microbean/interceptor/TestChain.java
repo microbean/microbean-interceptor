@@ -1,18 +1,15 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2021 microBean™.
+ * Copyright © 2022–2023 microBean™.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
- * implied.  See the License for the specific language governing
- * permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations under the License.
  */
 package org.microbean.interceptor;
 
@@ -86,7 +83,9 @@ final class TestChain {
     final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalConstructor(lookup, this.getClass().getDeclaredConstructor())
       .prime();
@@ -104,7 +103,9 @@ final class TestChain {
     final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalMethod(lookup, Frobnicator.class.getDeclaredMethod("frobnicate"))
       .withTarget(new Frobnicator())
@@ -140,7 +141,9 @@ final class TestChain {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalMethod(lookup, add)
       .withTarget(new Frobnicator())
@@ -162,7 +165,9 @@ final class TestChain {
     final Method ruminate = Frobnicator.class.getDeclaredMethod("ruminate", int.class, int.class);
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalMethod(lookup, ruminate)
       .withTarget(new Frobnicator())
@@ -184,7 +189,9 @@ final class TestChain {
     final Method voidLambdaize = Frobnicator.class.getDeclaredMethod("voidLambdaize", Object[].class);
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalMethod(lookup, voidLambdaize)
       .withTarget(new Frobnicator())
@@ -206,7 +213,9 @@ final class TestChain {
     final Method lambdaize = Frobnicator.class.getDeclaredMethod("lambdaize", Object[].class);
     final Chain chain =
       new Chain()
-      .plusInterceptorFunction(lookup, this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class), () -> this)
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
       .sort()
       .withTerminalMethod(lookup, lambdaize)
       .withTarget(new Frobnicator())
@@ -220,6 +229,10 @@ final class TestChain {
     assertTrue(invoke);
     assertNotNull(chain.getTarget());
     assertSame(chain.getTarget(), chain.getTarget());
+  }
+
+  private final TestChain returnThis() {
+    return this;
   }
 
   private static class Frobnicator {
