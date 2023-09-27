@@ -20,8 +20,6 @@ import java.lang.invoke.MethodType;
 
 import java.lang.reflect.Method;
 
-import java.util.List;
-
 import java.util.function.BiFunction;
 
 import jakarta.interceptor.InvocationContext;
@@ -29,20 +27,15 @@ import jakarta.interceptor.InvocationContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static java.lang.invoke.MethodHandles.lookup;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-final class TestChain {
-
-  private static final Lookup lookup = lookup();
+final class TestDeprecatedChain {
 
   private static boolean aroundConstruct;
 
@@ -52,7 +45,7 @@ final class TestChain {
 
   private static boolean invoke;
 
-  private TestChain() {
+  private TestDeprecatedChain() {
     super();
     construct = true;
   }
@@ -77,8 +70,8 @@ final class TestChain {
 
   @Test
   final void testEmptyChain() throws Exception {
-    final Chain chain = new Chain();
-    assertThrows(IllegalStateException.class, chain::call);
+    final DeprecatedChain chain = new DeprecatedChain();
+    assertNull(chain.call());
     assertFalse(construct);
     assertFalse(aroundConstruct);
     assertFalse(invoke);
@@ -87,10 +80,15 @@ final class TestChain {
 
   @Test
   final void testVoidAroundConstruct() throws Exception {
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, this.getClass().getDeclaredConstructor(), null);
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalConstructor(lookup, this.getClass().getDeclaredConstructor())
+      .prime();
     assertNull(chain.getTarget());
     chain.call();
     assertTrue(aroundConstruct);
@@ -101,22 +99,17 @@ final class TestChain {
   }
 
   @Test
-  final void testMethodHandleStuff() throws Throwable {
-    final Method m = Frobnicator.class.getDeclaredMethod("frobnicate");
-    assertEquals(0, m.getParameterCount());
-    MethodHandle unreflectedMh = lookup.unreflect(m);
-    assertEquals(1, unreflectedMh.type().parameterCount()); // receiver type
-    MethodHandle virtualMh = lookup.findVirtual(Frobnicator.class, "frobnicate", MethodType.methodType(void.class));
-    assertEquals(1, virtualMh.type().parameterCount()); // receiver type
-  }
-
-  @Test
   final void testAroundInvokeOnFrobnicate() throws Exception {
-    final Lookup lookup = MethodHandles.lookup();
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), Frobnicator.class.getDeclaredMethod("frobnicate"), null);
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalMethod(lookup, Frobnicator.class.getDeclaredMethod("frobnicate"))
+      .withTarget(new Frobnicator())
+      .prime();
     assertNotNull(chain.getTarget());
     chain.call();
     assertTrue(aroundInvoke);
@@ -127,8 +120,13 @@ final class TestChain {
 
   @Test
   final void testUninterceptedAdd() throws Exception {
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final Chain chain  = new Chain(List.of(), new Frobnicator(), add, new Object[] { 1, 2 });
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .withTerminalMethod(lookup, add)
+      .withTarget(new Frobnicator())
+      .withParameters(1, 2);
     assertSame(add, chain.getMethod());
     assertEquals(Integer.valueOf(3), chain.call());
     assertFalse(construct);
@@ -139,11 +137,18 @@ final class TestChain {
 
   @Test
   final void testAroundInvokeOnAdd() throws Exception {
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), add, new Object[] { 1, 2 });
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalMethod(lookup, add)
+      .withTarget(new Frobnicator())
+      .withParameters(1, 2)
+      .prime();
     assertNotNull(chain.getTarget());
     assertSame(add, chain.getMethod());
     final Object result = chain.call();
@@ -156,11 +161,18 @@ final class TestChain {
 
   @Test
   final void testAroundInvokeOnRuminate() throws Exception {
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Method ruminate = Frobnicator.class.getDeclaredMethod("ruminate", int.class, int.class);
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), ruminate, new Object[] { 1, 2 });
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalMethod(lookup, ruminate)
+      .withTarget(new Frobnicator())
+      .withParameters(1, 2)
+      .prime();
     assertNotNull(chain.getTarget());
     assertSame(ruminate, chain.getMethod());
     final Object result = chain.call();
@@ -173,11 +185,18 @@ final class TestChain {
 
   @Test
   final void testAroundInvokeOnVoidLambdaize() throws Exception {
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Method voidLambdaize = Frobnicator.class.getDeclaredMethod("voidLambdaize", Object[].class);
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), voidLambdaize, new Object[] { 1, 2 });
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalMethod(lookup, voidLambdaize)
+      .withTarget(new Frobnicator())
+      .withParameters(1, 2)
+      .prime();
     assertNotNull(chain.getTarget());
     assertSame(voidLambdaize, chain.getMethod());
     final Object result = chain.call();
@@ -190,11 +209,18 @@ final class TestChain {
 
   @Test
   final void testAroundInvokeOnLambdaize() throws Exception {
+    final Lookup lookup = MethodHandles.privateLookupIn(this.getClass(), MethodHandles.lookup());
     final Method lambdaize = Frobnicator.class.getDeclaredMethod("lambdaize", Object[].class);
-    final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
-                                   this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), lambdaize, new Object[] { 1, 2 });
+    final DeprecatedChain chain =
+      new DeprecatedChain()
+      .plusInterceptorFunction(lookup,
+                               this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+                               this::returnThis)
+      .sort()
+      .withTerminalMethod(lookup, lambdaize)
+      .withTarget(new Frobnicator())
+      .withParameters(1, 2)
+      .prime();
     assertNotNull(chain.getTarget());
     assertSame(lambdaize, chain.getMethod());
     final Object result = chain.call();
@@ -205,7 +231,7 @@ final class TestChain {
     assertSame(chain.getTarget(), chain.getTarget());
   }
 
-  private final TestChain returnThis() {
+  private final TestDeprecatedChain returnThis() {
     return this;
   }
 
@@ -244,6 +270,7 @@ final class TestChain {
       assertEquals(Integer.valueOf(2), parameters[1]);
       return Integer.valueOf(((Integer)parameters[0]).intValue() + ((Integer)parameters[1]).intValue());
     }
+
 
   }
 

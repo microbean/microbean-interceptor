@@ -4,7 +4,7 @@
 
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
-  <version>0.1.4-SNAPSHOT</version>
+  <version>0.2.0-SNAPSHOT</version>
 
   <parent>
     <groupId>org.microbean</groupId>
@@ -36,21 +36,18 @@
         <groupId>jakarta.interceptor</groupId>
         <artifactId>jakarta.interceptor-api</artifactId>
         <version>2.1.0</version>
-        <type>jar</type>
       </dependency>
 
       <dependency>
         <groupId>org.microbean</groupId>
         <artifactId>microbean-invoke</artifactId>
         <version>0.0.16</version>
-        <type>jar</type>
       </dependency>
 
       <dependency>
         <groupId>org.microbean</groupId>
         <artifactId>microbean-qualifier</artifactId>
         <version>0.2.3</version>
-        <type>jar</type>
       </dependency>
 
 
@@ -66,21 +63,18 @@
     <dependency>
       <groupId>jakarta.interceptor</groupId>
       <artifactId>jakarta.interceptor-api</artifactId>
-      <type>jar</type>
       <scope>compile</scope>
     </dependency>
 
     <dependency>
       <groupId>org.microbean</groupId>
       <artifactId>microbean-invoke</artifactId>
-      <type>jar</type>
       <scope>compile</scope>
     </dependency>
 
     <dependency>
       <groupId>org.microbean</groupId>
       <artifactId>microbean-qualifier</artifactId>
-      <type>jar</type>
       <scope>compile</scope>
     </dependency>
 
@@ -91,14 +85,12 @@
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
-      <type>jar</type>
       <scope>test</scope>
     </dependency>
 
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
-      <type>jar</type>
       <scope>test</scope>
     </dependency>
 
