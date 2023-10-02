@@ -40,6 +40,7 @@ import java.util.function.Supplier;
 import jakarta.interceptor.InvocationContext;
 
 import static java.lang.invoke.MethodHandles.lookup;
+import static java.lang.invoke.MethodHandles.privateLookupIn;
 
 import static org.microbean.interceptor.LowLevelOperation.invokeUnchecked;
 
@@ -70,23 +71,37 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.methodSupplier = Chain::returnNull;
     this.timerSupplier = Chain::returnNull;
     this.targetReference = new AtomicReference<>();
-    this.proceedImplementation = () -> { throw new IllegalStateException(); };
+    this.proceedImplementation = Chain::returnNull;
     this.parameters = EMPTY_OBJECT_ARRAY;
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final Object target,
                final Method terminalMethod,
                final Object[] parameters) {
     this(interceptorMethods,
-         terminalFunctionOf(terminalMethod, target),
+         terminalFunctionOf(terminalMethod, null),
          false,
          new ConcurrentHashMap<>(),
          Chain::returnNull,
          () -> terminalMethod,
          parameters,
          Chain::returnNull,
-         new AtomicReference<>(target));
+         new AtomicReference<>());
+  }
+
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final AtomicReference<Object> targetReference,
+               final Method terminalMethod,
+               final Object[] parameters) {
+    this(interceptorMethods,
+         terminalFunctionOf(terminalMethod, targetReference::get),
+         false,
+         new ConcurrentHashMap<>(),
+         Chain::returnNull,
+         () -> terminalMethod,
+         parameters,
+         Chain::returnNull,
+         targetReference);
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
@@ -104,6 +119,21 @@ public class Chain implements Callable<Object>, InvocationContext {
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final AtomicReference<Object> targetReference,
+               final Constructor<?> terminalConstructor,
+               final Object[] parameters) {
+    this(interceptorMethods,
+         terminalFunctionOf(terminalConstructor),
+         true,
+         new ConcurrentHashMap<>(),
+         () -> terminalConstructor,
+         Chain::returnNull,
+         parameters,
+         Chain::returnNull,
+         targetReference);
+  }
+
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Function<? super Object[], ?> terminalFunction,
                final boolean setTarget,
                final Object[] parameters) {
@@ -116,6 +146,22 @@ public class Chain implements Callable<Object>, InvocationContext {
          parameters,
          Chain::returnNull,
          new AtomicReference<>());
+  }
+
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final AtomicReference<Object> targetReference,
+               final Function<? super Object[], ?> terminalFunction,
+               final boolean setTarget,
+               final Object[] parameters) {
+    this(interceptorMethods,
+         terminalFunction,
+         setTarget,
+         new ConcurrentHashMap<>(),
+         Chain::returnNull,
+         Chain::returnNull,
+         parameters,
+         Chain::returnNull,
+         targetReference);
   }
 
   private Chain(List<? extends InterceptorMethod> interceptorMethods,
@@ -227,66 +273,60 @@ public class Chain implements Callable<Object>, InvocationContext {
 
 
   public static final Function<Object[], Object> terminalFunctionOf(final Constructor<?> c) {
-    MethodHandle mh;
     try {
-      mh = MethodHandles.privateLookupIn(c.getDeclaringClass(), Chain.lookup).unreflectConstructor(c);
+      return terminalFunctionOf(privateLookupIn(c.getDeclaringClass(), Chain.lookup).unreflectConstructor(c), null);
     } catch (final IllegalAccessException e) {
       throw new IllegalStateException(e.getMessage(), e);
     }
-    final MethodType mt = mh.type().changeReturnType(Object.class);
-    mh = mh.asType(mt);
-    final MethodHandle terminalFunction;
-    final int pc = mt.parameterCount();
-    if (pc == 0) {
-      terminalFunction = mh;
-      return ps -> invokeUnchecked(() -> terminalFunction.invokeExact());
-    } else if (pc == 1) {
-      if (mt.parameterType(0) == Object[].class) {
-        terminalFunction = mh;
-        return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(ps));
-      }
-    }
-    terminalFunction = mh.asSpreader(Object[].class, mt.parameterCount());
-    return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(ps));
   }
 
   public static final Function<Object[], Object> terminalFunctionOf(final Method staticMethod) {
     return terminalFunctionOf(staticMethod, null);
   }
 
-  public static final Function<Object[], Object> terminalFunctionOf(final Method m, final Object receiver) {
-    MethodHandle mh;
+  public static final Function<Object[], Object> terminalFunctionOf(final Method m, final Supplier<?> receiverSupplier) {
     try {
-      mh = MethodHandles.privateLookupIn(m.getDeclaringClass(), Chain.lookup).unreflect(m);
+      return terminalFunctionOf(privateLookupIn(m.getDeclaringClass(), Chain.lookup).unreflect(m), receiverSupplier);
     } catch (final IllegalAccessException e) {
       throw new IllegalStateException(e.getMessage(), e);
     }
-    return terminalFunctionOf(mh, receiver);
   }
 
-  public static final Function<Object[], Object> terminalFunctionOf(final MethodHandle mh) {
-    return terminalFunctionOf(mh, null);
+  public static final Function<Object[], Object> terminalFunctionOf(final MethodHandle receiverlessMethodHandle) {
+    return terminalFunctionOf(receiverlessMethodHandle, null);
   }
-  
-  public static final Function<Object[], Object> terminalFunctionOf(MethodHandle mh, final Object receiver) {
-    MethodType mt = mh.type().changeReturnType(Object.class);
-    mh = mh.asType(mt);
-    if (receiver != null) {
-      mh = mh.bindTo(receiver);
-      mt = mh.type();
-    }
-    final MethodHandle terminalFunction;
+
+  public static final Function<Object[], Object> terminalFunctionOf(MethodHandle mh, final Supplier<?> receiverSupplier) {
+    mh = mh.asType(mh.type().changeReturnType(Object.class));
+    MethodType mt = mh.type();
     final int pc = mt.parameterCount();
-    if (pc == 0) {
-      terminalFunction = mh;
-      return ps -> invokeUnchecked(() -> terminalFunction.invokeExact());
+
+    final MethodHandle terminalFunction;
+
+    if (receiverSupplier == null) {
+      // Static
+      switch (pc) {
+      case 0:
+        terminalFunction = mh;
+        return ps -> invokeUnchecked(() -> terminalFunction.invokeExact());
+      default:
+        terminalFunction = pc == 1 && mt.parameterType(0) == Object[].class ? mh : mh.asSpreader(Object[].class, pc);
+        return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(ps));
+      }
     }
-    if (pc == 1 && mt.parameterType(0) == Object[].class) {
+
+    // Virtual
+    mh = mh.asType(mt.changeParameterType(0, Object.class));
+    mt = mh.type();
+
+    switch (pc) {
+    case 1:
       terminalFunction = mh;
-    } else {
-      terminalFunction = mh.asSpreader(Object[].class, pc);
+      return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(receiverSupplier.get()));
+    default:
+      terminalFunction = pc == 2 && mt.parameterType(1) == Object[].class ? mh : mh.asSpreader(Object[].class, pc - 1);
+      return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(receiverSupplier.get(), ps));
     }
-    return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(ps));
   }
 
   private static final <T> T returnNull() {

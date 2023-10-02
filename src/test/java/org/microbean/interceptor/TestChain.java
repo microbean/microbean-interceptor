@@ -22,7 +22,7 @@ import java.lang.reflect.Method;
 
 import java.util.List;
 
-import java.util.function.BiFunction;
+import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.interceptor.InvocationContext;
 
@@ -37,7 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class TestChain {
@@ -78,7 +77,7 @@ final class TestChain {
   @Test
   final void testEmptyChain() throws Exception {
     final Chain chain = new Chain();
-    assertThrows(IllegalStateException.class, chain::call);
+    assertNull(chain.call());
     assertFalse(construct);
     assertFalse(aroundConstruct);
     assertFalse(invoke);
@@ -112,11 +111,11 @@ final class TestChain {
 
   @Test
   final void testAroundInvokeOnFrobnicate() throws Exception {
-    final Lookup lookup = MethodHandles.lookup();
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), Frobnicator.class.getDeclaredMethod("frobnicate"), null);
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(ims, tr, Frobnicator.class.getDeclaredMethod("frobnicate"), null);
     assertNotNull(chain.getTarget());
     chain.call();
     assertTrue(aroundInvoke);
@@ -128,7 +127,8 @@ final class TestChain {
   @Test
   final void testUninterceptedAdd() throws Exception {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final Chain chain  = new Chain(List.of(), new Frobnicator(), add, new Object[] { 1, 2 });
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(List.of(), tr, add, new Object[] { 1, 2 });
     assertSame(add, chain.getMethod());
     assertEquals(Integer.valueOf(3), chain.call());
     assertFalse(construct);
@@ -143,7 +143,8 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), add, new Object[] { 1, 2 });
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(ims, tr, add, new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(add, chain.getMethod());
     final Object result = chain.call();
@@ -160,7 +161,8 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), ruminate, new Object[] { 1, 2 });
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(ims, tr, ruminate, new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(ruminate, chain.getMethod());
     final Object result = chain.call();
@@ -177,7 +179,8 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), voidLambdaize, new Object[] { 1, 2 });
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(ims, tr, voidLambdaize, new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(voidLambdaize, chain.getMethod());
     final Object result = chain.call();
@@ -194,7 +197,8 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, new Frobnicator(), lambdaize, new Object[] { 1, 2 });
+    final AtomicReference<Object> tr = new AtomicReference<>(new Frobnicator());
+    final Chain chain = new Chain(ims, tr, lambdaize, new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(lambdaize, chain.getMethod());
     final Object result = chain.call();
