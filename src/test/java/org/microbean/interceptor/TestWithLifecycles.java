@@ -17,12 +17,15 @@ import java.util.List;
 
 import java.util.concurrent.atomic.AtomicReference;
 
+import java.util.function.Supplier;
+
 import jakarta.interceptor.InvocationContext;
 
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class TestWithLifecycles {
 
@@ -32,13 +35,11 @@ final class TestWithLifecycles {
 
   @Test
   final void testTargetClassInterceptorMethod() throws Exception {
-    final AtomicReference<Object> tr = new AtomicReference<>();
     final Target target = new Target();
-    final InterceptorMethod im = InterceptorMethod.of(Target.class.getMethod("aroundInvokeMethod", InvocationContext.class), tr::get);
-    final Chain chain = new Chain(List.of(im), tr, Target.class.getMethod("businessMethod"), null /* no parameters */);
-    assertNull(chain.getTarget()); // haven't set it yet
-    tr.set(target);
-    assertSame(chain.getTarget(), tr.get());
+    final Supplier<?> targetSupplier = () -> target;
+    final InterceptorMethod im = InterceptorMethod.of(Target.class.getMethod("aroundInvokeMethod", InvocationContext.class), targetSupplier);
+    final Chain chain = new Chain(List.of(im), targetSupplier, Target.class.getMethod("businessMethod"), null /* no parameters */);
+    assertTrue(chain.getTarget() instanceof Target);
     assertNull(chain.call()); // null because businessMethod() returns void
   }
 

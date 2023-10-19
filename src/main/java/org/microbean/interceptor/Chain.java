@@ -14,16 +14,12 @@
 package org.microbean.interceptor;
 
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,10 +56,13 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   private final AtomicReference<Object> targetReference;
 
+  private final Supplier<?> targetSupplier;
+
   private final Supplier<?> proceedImplementation;
 
   private volatile Object[] parameters;
 
+  @Deprecated
   public Chain() {
     super();
     this.contextData = new ConcurrentHashMap<>();
@@ -71,37 +70,23 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.methodSupplier = Chain::returnNull;
     this.timerSupplier = Chain::returnNull;
     this.targetReference = new AtomicReference<>();
+    this.targetSupplier = Chain::returnNull;
     this.proceedImplementation = Chain::returnNull;
     this.parameters = EMPTY_OBJECT_ARRAY;
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final Method terminalMethod,
-               final Object[] parameters) {
+               final Constructor<?> terminalConstructor) {
     this(interceptorMethods,
-         terminalFunctionOf(terminalMethod, null),
-         false,
+         terminalFunctionOf(terminalConstructor),
+         true, // set target
          new ConcurrentHashMap<>(),
-         Chain::returnNull,
-         () -> terminalMethod,
-         parameters,
-         Chain::returnNull,
+         () -> terminalConstructor,
+         Chain::returnNull, // method supplier
+         Chain::returnNull, // targetSupplier (initial target supplier)
+         EMPTY_OBJECT_ARRAY,
+         Chain::returnNull, // timer supplier
          new AtomicReference<>());
-  }
-
-  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final AtomicReference<Object> targetReference,
-               final Method terminalMethod,
-               final Object[] parameters) {
-    this(interceptorMethods,
-         terminalFunctionOf(terminalMethod, targetReference::get),
-         false,
-         new ConcurrentHashMap<>(),
-         Chain::returnNull,
-         () -> terminalMethod,
-         parameters,
-         Chain::returnNull,
-         targetReference);
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
@@ -109,59 +94,62 @@ public class Chain implements Callable<Object>, InvocationContext {
                final Object[] parameters) {
     this(interceptorMethods,
          terminalFunctionOf(terminalConstructor),
-         true,
+         true, // set target
          new ConcurrentHashMap<>(),
          () -> terminalConstructor,
-         Chain::returnNull,
+         Chain::returnNull, // method supplier
+         Chain::returnNull, // targetSupplier (initial target supplier)
          parameters,
-         Chain::returnNull,
+         Chain::returnNull, // timer supplier
          new AtomicReference<>());
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final AtomicReference<Object> targetReference,
-               final Constructor<?> terminalConstructor,
-               final Object[] parameters) {
+               final Supplier<?> targetSupplier,
+               final Method terminalMethod) {
     this(interceptorMethods,
-         terminalFunctionOf(terminalConstructor),
-         true,
+         terminalFunctionOf(terminalMethod, targetSupplier),
+         false, // don't set target
          new ConcurrentHashMap<>(),
-         () -> terminalConstructor,
-         Chain::returnNull,
-         parameters,
-         Chain::returnNull,
-         targetReference);
+         Chain::returnNull, // constructor supplier
+         () -> terminalMethod,
+         targetSupplier,
+         EMPTY_OBJECT_ARRAY,
+         Chain::returnNull, // timer supplier
+         new AtomicReference<>());
   }
 
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final Supplier<?> targetSupplier,
+               final Method terminalMethod,
+               final Object[] parameters) {
+    this(interceptorMethods,
+         terminalFunctionOf(terminalMethod, targetSupplier),
+         false, // don't set target
+         new ConcurrentHashMap<>(),
+         Chain::returnNull, // constructor supplier
+         () -> terminalMethod,
+         targetSupplier,
+         parameters,
+         Chain::returnNull, // timer supplier
+         new AtomicReference<>());
+  }
+
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final Supplier<?> targetSupplier,
                final Function<? super Object[], ?> terminalFunction,
-               final boolean setTarget,
+               final boolean setTarget, // is the terminal function effectively a constructor?
                final Object[] parameters) {
     this(interceptorMethods,
          terminalFunction,
          setTarget,
          new ConcurrentHashMap<>(),
-         Chain::returnNull,
-         Chain::returnNull,
+         Chain::returnNull, // constructor supplier
+         Chain::returnNull, // method supplier
+         targetSupplier,
          parameters,
-         Chain::returnNull,
+         Chain::returnNull, // timer supplier
          new AtomicReference<>());
-  }
-
-  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final AtomicReference<Object> targetReference,
-               final Function<? super Object[], ?> terminalFunction,
-               final boolean setTarget,
-               final Object[] parameters) {
-    this(interceptorMethods,
-         terminalFunction,
-         setTarget,
-         new ConcurrentHashMap<>(),
-         Chain::returnNull,
-         Chain::returnNull,
-         parameters,
-         Chain::returnNull,
-         targetReference);
   }
 
   private Chain(List<? extends InterceptorMethod> interceptorMethods,
@@ -170,6 +158,7 @@ public class Chain implements Callable<Object>, InvocationContext {
                 final ConcurrentMap<String, Object> contextData,
                 final Supplier<? extends Constructor<?>> constructorSupplier,
                 final Supplier<? extends Method> methodSupplier,
+                final Supplier<?> targetSupplier,
                 final Object[] parameters,
                 final Supplier<?> timerSupplier,
                 final AtomicReference<Object> targetReference) {
@@ -180,6 +169,7 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.parameters = parameters == null ? EMPTY_OBJECT_ARRAY : parameters;
     this.timerSupplier = timerSupplier == null ? Chain::returnNull : timerSupplier;
     this.targetReference = targetReference == null ? new AtomicReference<>() : targetReference;
+    this.targetSupplier = targetSupplier == null ? Chain::returnNull : targetSupplier;
     if (interceptorMethods == null || interceptorMethods.isEmpty()) {
       Objects.requireNonNull(terminalFunction, "terminalFunction");
       if (setTarget) {
@@ -200,6 +190,7 @@ public class Chain implements Callable<Object>, InvocationContext {
                                         this.contextData,
                                         this::getConstructor,
                                         this::getMethod,
+                                        this.targetSupplier,
                                         this.parameters,
                                         this::getTimer,
                                         this.targetReference));
@@ -238,7 +229,12 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   @Override
   public final Object getTarget() {
-    return this.targetReference.get();
+    Object target = this.targetReference.get();
+    if (target == null) {
+      target = this.targetSupplier.get();
+      return target == null || this.targetReference.compareAndSet(null, target) ? target : this.targetReference.get();
+    }
+    return target;
   }
 
   public final void setTarget(final Object target) {

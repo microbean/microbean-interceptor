@@ -18,7 +18,7 @@ interface LowLevelOperation<T> {
 
   T invoke() throws Throwable;
 
-  static <T> T invokeUnchecked(final LowLevelOperation<? extends T> c) {
+  static <T> T invokeUnchecked(final LowLevelOperation<T> c) {
     try {
       return c.invoke();
     } catch (final RuntimeException | Error e) {
