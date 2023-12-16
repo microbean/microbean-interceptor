@@ -49,32 +49,20 @@ public interface InterceptorMethod {
     }
   }
 
-  public static InterceptorMethod of(final MethodHandle receiverlessMethodHandle) {
-    return of(receiverlessMethodHandle, null);
+  public static InterceptorMethod of(final MethodHandle receiverlessOrBoundMethodHandle) {
+    return of(receiverlessOrBoundMethodHandle, null);
   }
 
-  public static InterceptorMethod of(final MethodHandle mh, final Supplier<?> targetSupplier) {
-    final MethodHandle interceptorMethod = mh.asType(mh.type().changeParameterType(0, Object.class));
-    final Object returnType = interceptorMethod.type().returnType();
+  public static InterceptorMethod of(final MethodHandle mh, final Supplier<?> receiverSupplier) {
+    final Object returnType = mh.type().returnType();
     if (returnType == void.class || returnType == Void.class) {
-      if (targetSupplier == null) {
-        return ic -> {
-          try {
-            interceptorMethod.invokeExact(ic);
-          } catch (final RuntimeException | Error e) {
-            throw e;
-          } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e.getMessage(), e);
-          } catch (final Throwable e) {
-            throw new IllegalStateException(e.getMessage(), e);
-          }
-          return null;
-        };
+      if (receiverSupplier == null) {
+        return ic -> invokeExact(mh, ic);
       }
+      final MethodHandle unboundInterceptorMethod = mh.asType(mh.type().changeParameterType(0, Object.class));
       return ic -> {
         try {
-          interceptorMethod.invokeExact(targetSupplier.get(), ic);
+          unboundInterceptorMethod.invokeExact(receiverSupplier.get(), ic);
         } catch (final RuntimeException | Error e) {
           throw e;
         } catch (final InterruptedException e) {
@@ -85,32 +73,37 @@ public interface InterceptorMethod {
         }
         return null;
       };
-    } else if (targetSupplier == null) {
-      return ic -> {
-        try {
-          return interceptorMethod.invokeExact(ic);
-        } catch (final RuntimeException | Error e) {
-          throw e;
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new IllegalStateException(e.getMessage(), e);
-        } catch (final Throwable e) {
-          throw new IllegalStateException(e.getMessage(), e);
-        }
-      };
+    } else if (receiverSupplier == null) {
+      return ic -> invokeExact(mh, ic);
     }
-    return ic -> {
-      try {
-        return interceptorMethod.invokeExact(targetSupplier.get(), ic);
-      } catch (final RuntimeException | Error e) {
-        throw e;
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IllegalStateException(e.getMessage(), e);
-      } catch (final Throwable e) {
-        throw new IllegalStateException(e.getMessage(), e);
-      }
-    };
+    final MethodHandle unboundInterceptorMethod = mh.asType(mh.type().changeParameterType(0, Object.class));
+    return ic -> invokeExact(unboundInterceptorMethod, receiverSupplier, ic);
+  }
+
+  private static Object invokeExact(final MethodHandle mh, final InvocationContext ic) {
+    try {
+      return mh.invokeExact(ic);
+    } catch (final RuntimeException | Error e) {
+      throw e;
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e.getMessage(), e);
+    } catch (final Throwable e) {
+      throw new IllegalStateException(e.getMessage(), e);
+    }
+  }
+
+  private static Object invokeExact(final MethodHandle mh, final Supplier<?> receiverSupplier, final InvocationContext ic) {
+    try {
+      return mh.invokeExact(receiverSupplier.get(), ic);
+    } catch (final RuntimeException | Error e) {
+      throw e;
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e.getMessage(), e);
+    } catch (final Throwable e) {
+      throw new IllegalStateException(e.getMessage(), e);
+    }
   }
 
 }

@@ -16,11 +16,15 @@ package org.microbean.interceptor;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
+import jakarta.annotation.PostConstruct;
+
 import jakarta.enterprise.inject.se.SeContainer;
 import jakarta.enterprise.inject.se.SeContainerInitializer;
 
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import jakarta.interceptor.AroundConstruct;
 import jakarta.interceptor.AroundInvoke;
 import jakarta.interceptor.Interceptor;
 import jakarta.interceptor.InterceptorBinding;
@@ -30,6 +34,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static java.lang.annotation.ElementType.CONSTRUCTOR;
 import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
@@ -65,14 +70,25 @@ final class TestWeldInterception {
 
   @Test
   final void testInterception() {
+    // See also https://issues.redhat.com/browse/CDI-287.
+    // See also https://issues.redhat.com/browse/CDI-339.
+    // ExternalInterceptor.aroundConstructMethod()
+    //   Bean()
+    //   Bean.initializerMethod()
+    // Bean.postConstructMethod()
     final Bean b = this.container.select(Bean.class).get();
     System.out.println("Bean selected");
-    b.businessMethod(); // ExternalInterceptor.aroundInvoke(), Bean.aroundInvoke(), Bean.businessMethod()
+    // ExternalInterceptor.aroundInvokeMethod()
+    //   Bean.aroundInvokeMethod()
+    //     Bean.businessMethod()
+    b.businessMethod();
     assertEquals(1, ExternalInterceptor.count);
     assertEquals(1, Bean.count);
   }
 
   @Interceptor
+  // See also https://issues.redhat.com/browse/WELD-1416
+  // See also https://issues.redhat.com/browse/WELD-1945
   @Verbose
   private static class ExternalInterceptor {
 
@@ -83,31 +99,57 @@ final class TestWeldInterception {
       count++;
     }
 
+    @AroundConstruct
+    void aroundConstructMethod(final InvocationContext ic) throws Exception {
+      System.out.println("ExternalInterceptor.aroundConstructMethod()");
+      ic.proceed();
+    }
+
+    @PostConstruct
+    void postConstructMethod(final InvocationContext ic) throws Exception {
+      System.out.println("ExternalInterceptor.postConstructMethod()");
+      // ic.proceed();
+    }
+
     @AroundInvoke
     Object aroundInvokeMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.aroundInvokeMethod()");
-      return ic.proceed();
+      Object rv = ic.proceed();
+      return rv;
     }
 
   }
 
   @Singleton
+  @Verbose
   private static class Bean {
 
     private static int count;
 
+    @Inject
     Bean() {
       super();
+      System.out.println("Bean()");
       count++;
     }
 
-    @Verbose
+    @Inject
+    void initializerMethod() {
+      System.out.println("Bean.initializerMethod()");
+    }
+
+    // "Lifecycle callback interceptor methods declared in a target class…must have the following signature:
+    //   void <METHOD>()"
+    @PostConstruct
+    void postConstructMethod() {
+      System.out.println("Bean.postConstructMethod()");
+    }
+
     void businessMethod() {
       System.out.println("Bean.businessMethod()");
     }
 
     @AroundInvoke
-    @Verbose
     Object aroundInvokeMethod(final InvocationContext ic) throws Exception {
       System.out.println("Bean.aroundInvokeMethod()");
       return ic.proceed();
@@ -117,7 +159,7 @@ final class TestWeldInterception {
 
   @InterceptorBinding
   @Retention(RUNTIME)
-  @Target({ METHOD, TYPE})
+  @Target({ CONSTRUCTOR, METHOD, TYPE})
   private @interface Verbose {
 
   }

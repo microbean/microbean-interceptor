@@ -75,6 +75,21 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.parameters = EMPTY_OBJECT_ARRAY;
   }
 
+  // For lifecycle events like PostConstruct, PreDestroy; no terminal function in these cases
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final Supplier<?> targetSupplier) {
+    this(interceptorMethods,
+         Chain::returnNull, // terminal function
+         false, // set target
+         new ConcurrentHashMap<>(),
+         Chain::returnNull, // constructor supplier
+         Chain::returnNull, // method supplier
+         targetSupplier,
+         EMPTY_OBJECT_ARRAY,
+         Chain::returnNull, // timer supplier
+         new AtomicReference<>());
+  }
+
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Constructor<?> terminalConstructor) {
     this(interceptorMethods,
@@ -216,6 +231,7 @@ public class Chain implements Callable<Object>, InvocationContext {
     return this.contextData;
   }
 
+  // OK to return null in many cases; see for example https://issues.redhat.com/browse/EJBTHREE-1215
   @Override
   public final Method getMethod() {
     return this.methodSupplier.get();
@@ -326,6 +342,10 @@ public class Chain implements Callable<Object>, InvocationContext {
   }
 
   private static final <T> T returnNull() {
+    return null;
+  }
+
+  private static final <T> T returnNull(final Object[] ignored) {
     return null;
   }
 
