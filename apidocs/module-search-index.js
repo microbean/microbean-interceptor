@@ -1,1 +1,1 @@
-moduleSearchIndex = [{"l":"org.microbean.interceptor"}];updateSearchResults();
+moduleSearchIndex = [{"l":"org.microbean.interceptor"}]
