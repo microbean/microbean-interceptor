@@ -16,9 +16,9 @@ package org.microbean.interceptor;
 @FunctionalInterface
 interface LowLevelOperation<T> {
 
-  T invoke() throws Throwable;
+  public T invoke() throws Throwable;
 
-  static <T> T invokeUnchecked(final LowLevelOperation<T> c) {
+  public static <T> T invokeUnchecked(final LowLevelOperation<T> c) {
     try {
       return c.invoke();
     } catch (final RuntimeException | Error e) {

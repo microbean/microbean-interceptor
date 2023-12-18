@@ -40,6 +40,11 @@ import static java.lang.invoke.MethodHandles.privateLookupIn;
 
 import static org.microbean.interceptor.LowLevelOperation.invokeUnchecked;
 
+/**
+ * A {@link Callable} {@link InvocationContext} implementation.
+ *
+ * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
+ */
 public class Chain implements Callable<Object>, InvocationContext {
 
   private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
@@ -60,9 +65,29 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   private final Supplier<?> proceedImplementation;
 
-  private volatile Object[] parameters;
+  private volatile Object[] arguments;
 
-  @Deprecated
+  /**
+   * Creates a new {@link Chain} primarily for testing purposes.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #call()}</li>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * <li>{@link #getTarget()}</li>
+   *
+   * <li>{@link #proceed()}</li>
+   *
+   * </ul>
+   */
   public Chain() {
     super();
     this.contextData = new ConcurrentHashMap<>();
@@ -72,9 +97,28 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.targetReference = new AtomicReference<>();
     this.targetSupplier = Chain::returnNull;
     this.proceedImplementation = Chain::returnNull;
-    this.parameters = EMPTY_OBJECT_ARRAY;
+    this.arguments = EMPTY_OBJECT_ARRAY;
   }
 
+  /**
+   * Creates a new {@link Chain} for lifecycle method interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param targetSupplier a {@link Supplier} of the target instance; may, rather uselessly, be {@code null}
+   */
   // For lifecycle events like PostConstruct, PreDestroy; no terminal function in these cases
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier) {
@@ -90,6 +134,27 @@ public class Chain implements Callable<Object>, InvocationContext {
          new AtomicReference<>());
   }
 
+  /**
+   * Creates a new {@link Chain} for around-construct interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTarget()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param terminalConstructor the {@link Constructor} being intercepted; must not be {@code null}
+   *
+   * @exception NullPointerException if {@code terminalConstructor} is {@code null}
+   */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Constructor<?> terminalConstructor) {
     this(interceptorMethods,
@@ -104,9 +169,30 @@ public class Chain implements Callable<Object>, InvocationContext {
          new AtomicReference<>());
   }
 
+  /**
+   * Creates a new {@link Chain} for around-construct interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param terminalConstructor the {@link Constructor} being intercepted; must not be {@code null}
+   *
+   * @param arguments the arguments to supply to the {@link Constructor}; may be {@code null}
+   *
+   * @exception NullPointerException if {@code terminalConstructor} is {@code null}
+   */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Constructor<?> terminalConstructor,
-               final Object[] parameters) {
+               final Object[] arguments) {
     this(interceptorMethods,
          terminalFunctionOf(terminalConstructor),
          true, // set target
@@ -114,11 +200,32 @@ public class Chain implements Callable<Object>, InvocationContext {
          () -> terminalConstructor,
          Chain::returnNull, // method supplier
          Chain::returnNull, // targetSupplier (initial target supplier)
-         parameters,
+         arguments,
          Chain::returnNull, // timer supplier
          new AtomicReference<>());
   }
 
+  /**
+   * Creates a new {@link Chain} for around-invoke interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param targetSupplier a {@link Supplier} of the target instance; may, rather uselessly, be {@code null}
+   *
+   * @param terminalMethod the {@link Method} to intercept; must not be {@code null}
+   *
+   * @exception NullPointerException if {@code terminalMethod} is {@code null}
+   */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
                final Method terminalMethod) {
@@ -134,10 +241,33 @@ public class Chain implements Callable<Object>, InvocationContext {
          new AtomicReference<>());
   }
 
+  /**
+   * Creates a new {@link Chain} for around-invoke interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param targetSupplier a {@link Supplier} of the target instance; may, rather uselessly, be {@code null}
+   *
+   * @param terminalMethod the {@link Method} to intercept; must not be {@code null}
+   *
+   * @param arguments the arguments to supply to the {@link Method}; may be {@code null}
+   *
+   * @exception NullPointerException if {@code terminalMethod} is {@code null}
+   */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
                final Method terminalMethod,
-               final Object[] parameters) {
+               final Object[] arguments) {
     this(interceptorMethods,
          terminalFunctionOf(terminalMethod, targetSupplier),
          false, // don't set target
@@ -145,16 +275,41 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::returnNull, // constructor supplier
          () -> terminalMethod,
          targetSupplier,
-         parameters,
+         arguments,
          Chain::returnNull, // timer supplier
          new AtomicReference<>());
   }
 
+  /**
+   * Creates a new {@link Chain} for around-construct or around-invoke interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param targetSupplier a {@link Supplier} of the target instance; may, rather uselessly, be {@code null}
+   *
+   * @param terminalFunction the terminal {@link Function} to intercept; must not be {@code null}
+   *
+   * @param setTarget whether the supplied {@code terminalFunction} is effectively a constructor
+   *
+   * @param arguments the arguments to supply to the terminal {@link Function}; may be {@code null}
+   */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
                final Function<? super Object[], ?> terminalFunction,
                final boolean setTarget, // is the terminal function effectively a constructor?
-               final Object[] parameters) {
+               final Object[] arguments) {
     this(interceptorMethods,
          terminalFunction,
          setTarget,
@@ -162,7 +317,7 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::returnNull, // constructor supplier
          Chain::returnNull, // method supplier
          targetSupplier,
-         parameters,
+         arguments,
          Chain::returnNull, // timer supplier
          new AtomicReference<>());
   }
@@ -174,14 +329,14 @@ public class Chain implements Callable<Object>, InvocationContext {
                 final Supplier<? extends Constructor<?>> constructorSupplier,
                 final Supplier<? extends Method> methodSupplier,
                 final Supplier<?> targetSupplier,
-                final Object[] parameters,
+                final Object[] arguments,
                 final Supplier<?> timerSupplier,
                 final AtomicReference<Object> targetReference) {
     super();
     this.contextData = contextData == null ? new ConcurrentHashMap<>() : contextData;
     this.constructorSupplier = constructorSupplier == null ? Chain::returnNull : constructorSupplier;
     this.methodSupplier = methodSupplier == null ? Chain::returnNull : methodSupplier;
-    this.parameters = parameters == null ? EMPTY_OBJECT_ARRAY : parameters;
+    this.arguments = arguments == null ? EMPTY_OBJECT_ARRAY : arguments;
     this.timerSupplier = timerSupplier == null ? Chain::returnNull : timerSupplier;
     this.targetReference = targetReference == null ? new AtomicReference<>() : targetReference;
     this.targetSupplier = targetSupplier == null ? Chain::returnNull : targetSupplier;
@@ -206,7 +361,7 @@ public class Chain implements Callable<Object>, InvocationContext {
                                         this::getConstructor,
                                         this::getMethod,
                                         this.targetSupplier,
-                                        this.parameters,
+                                        this.arguments,
                                         this::getTimer,
                                         this.targetReference));
         } catch (final RuntimeException | Error e) {
@@ -221,6 +376,11 @@ public class Chain implements Callable<Object>, InvocationContext {
     }
   }
 
+  /**
+   * Returns the {@link Constructor} being intercepted, if available, or {@code null}.
+   *
+   * @return the {@link Constructor} being intercepted, if available, or {@code null}
+   */
   @Override
   public final Constructor<?> getConstructor() {
     return this.constructorSupplier.get();
@@ -231,18 +391,38 @@ public class Chain implements Callable<Object>, InvocationContext {
     return this.contextData;
   }
 
+  /**
+   * Returns the {@link Method} being intercepted, if available, or {@code null}.
+   *
+   * @return the {@link Method} being intercepted, if available, or {@code null}
+   */
   // OK to return null in many cases; see for example https://issues.redhat.com/browse/EJBTHREE-1215
   @Override
   public final Method getMethod() {
     return this.methodSupplier.get();
   }
 
+  /**
+   * Returns any arguments in effect for the current interception.
+   *
+   * <p>For historical reasons, the Jakarta Interceptors specification refers, incorrectly, to arguments as
+   * "parameters".</p>
+   *
+   * @return any arguments in effect for the current interception; never {@code null}
+   *
+   * @see #setParameters(Object[])
+   */
   @Override
   public final Object[] getParameters() {
     // Cloning etc. is not necessary; this whole API is stupid
-    return this.parameters; // volatile read
+    return this.arguments; // volatile read
   }
 
+  /**
+   * Returns the target instance, if available, or {@code null}.
+   *
+   * @return the target instance, if available, or {@code null}
+   */
   @Override
   public final Object getTarget() {
     Object target = this.targetReference.get();
@@ -253,29 +433,70 @@ public class Chain implements Callable<Object>, InvocationContext {
     return target;
   }
 
+  /**
+   * Sets the target instance to be the supplied {@code target}.
+   *
+   * @param target the target instance; must not be {@code null}
+   *
+   * @exception NullPointerException if {@code target} is {@code null}
+   *
+   * @see #getTarget()
+   */
   public final void setTarget(final Object target) {
     this.targetReference.set(Objects.requireNonNull(target, "target"));
   }
 
+  /**
+   * Returns the timer, if available, or {@code null}.
+   *
+   * @return the timer, if available, or {@code null}
+   */
   @Override
   public final Object getTimer() {
     return this.timerSupplier.get();
   }
 
+  /**
+   * Invokes the {@link #proceed()} method and returns its result.
+   *
+   * @return the result of invoking the {@link #proceed()} method, which may be {@code null}
+   *
+   * @exception Exception if an error occurs
+   *
+   * @see #proceed()
+   */
   @Override // Callable<Object>
   public final Object call() throws Exception {
     return this.proceed();
   }
 
+  /**
+   * Applies the next interception in this {@link Chain}, or calls the terminal function and returns the result, which
+   * may be {@code null}.
+   *
+   * @return the result of proceeding, which may be {@code null}
+   *
+   * @exception Exception if an error occurs
+   */
   @Override
   public Object proceed() throws Exception {
     return this.proceedImplementation.get();
   }
 
+  /**
+   * Sets arguments to be in effect for the current interception.
+   *
+   * <p>For historical reasons, the Jakarta Interceptors specification refers, incorrectly, to arguments as
+   * "parameters".</p>
+   *
+   * @param arguments the arguments; may be {@code null}
+   *
+   * @see #getParameters()
+   */
   @Override
-  public final void setParameters(final Object[] parameters) {
+  public final void setParameters(final Object[] arguments) {
     // Cloning etc. is not necessary; this whole API is stupid
-    this.parameters = parameters == null ? EMPTY_OBJECT_ARRAY : parameters; // volatile write
+    this.arguments = arguments == null ? EMPTY_OBJECT_ARRAY : arguments; // volatile write
   }
 
 
@@ -284,6 +505,17 @@ public class Chain implements Callable<Object>, InvocationContext {
    */
 
 
+  /**
+   * Creates and returns a {@link Function} encapsulating the supplied {@link Constructor}.
+   *
+   * @param c a {@link Constructor}; must not be {@code null}
+   *
+   * @return a {@link Function} encapsulating the supplied {@link Constructor}; never {@code null}
+   *
+   * @exception NullPointerException if {@code c} is {@code null}
+   *
+   * @exception IllegalStateException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
+   */
   public static final Function<Object[], Object> terminalFunctionOf(final Constructor<?> c) {
     try {
       return terminalFunctionOf(privateLookupIn(c.getDeclaringClass(), Chain.lookup).unreflectConstructor(c), null);
@@ -292,10 +524,36 @@ public class Chain implements Callable<Object>, InvocationContext {
     }
   }
 
+  /**
+   * Creates and returns a {@link Function} encapsulating the supplied {@code static} {@link Method}.
+   *
+   * @param staticMethod a {@code static} {@link Method}; must not be {@code null}
+   *
+   * @return a {@link Function} encapsulating the supplied {@code static} {@link Method}; never {@code null}
+   *
+   * @exception NullPointerException if {@code staticMethod} is {@code null}
+   *
+   * @exception IllegalStateException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   */
   public static final Function<Object[], Object> terminalFunctionOf(final Method staticMethod) {
     return terminalFunctionOf(staticMethod, null);
   }
 
+  /**
+   * Creates and returns a {@link Function} encapsulating the supplied {@link Method}.
+   *
+   * @param m a {@link Method}; must not be {@code null}. If {@code m} is a virtual method, then the supplied {@code
+   * receiverSupplier} will be used to supply its receiver
+   *
+   * @param receiverSupplier a {@link Supplier} of the receiver for the supplied {@link Method}; may be {@code null} in
+   * which case the supplied {@link Method} must be {@code static}
+   *
+   * @return a {@link Function} encapsulating the supplied {@link Method}; never {@code null}
+   *
+   * @exception NullPointerException if {@code m} is {@code null}
+   *
+   * @exception IllegalStateException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   */
   public static final Function<Object[], Object> terminalFunctionOf(final Method m, final Supplier<?> receiverSupplier) {
     try {
       return terminalFunctionOf(privateLookupIn(m.getDeclaringClass(), Chain.lookup).unreflect(m), receiverSupplier);
@@ -304,10 +562,33 @@ public class Chain implements Callable<Object>, InvocationContext {
     }
   }
 
+  /**
+   * Creates and returns a {@link Function} encapsulating the supplied {@link MethodHandle}.
+   *
+   * @param receiverlessMethodHandle a {@link MethodHandle}; must not be {@code null}. {@code mh} must be receiverless
+   * or {@linkplain MethodHandle#bindTo(Object) bound} to a receiver already.
+   *
+   * @return a {@link Function} encapsulating the supplied {@link MethodHandle}; never {@code null}
+   *
+   * @exception NullPointerException if {@code mh} is {@code null}
+   */
   public static final Function<Object[], Object> terminalFunctionOf(final MethodHandle receiverlessMethodHandle) {
     return terminalFunctionOf(receiverlessMethodHandle, null);
   }
 
+  /**
+   * Creates and returns a {@link Function} encapsulating the supplied {@link MethodHandle}.
+   *
+   * @param mh a {@link MethodHandle}; must not be {@code null}. If {@code mh} is a {@link MethodHandle} requiring a
+   * receiver, then the supplied {@code receiverSupplier} will be used to supply its receiver
+   *
+   * @param receiverSupplier a {@link Supplier} of the receiver for the supplied {@link MethodHandle}; may be {@code
+   * null} in which case the supplied {@link MethodHandle} must be receiverless
+   *
+   * @return a {@link Function} encapsulating the supplied {@link MethodHandle}; never {@code null}
+   *
+   * @exception NullPointerException if {@code mh} is {@code null}
+   */
   public static final Function<Object[], Object> terminalFunctionOf(MethodHandle mh, final Supplier<?> receiverSupplier) {
     mh = mh.asType(mh.type().changeReturnType(Object.class));
     MethodType mt = mh.type();
