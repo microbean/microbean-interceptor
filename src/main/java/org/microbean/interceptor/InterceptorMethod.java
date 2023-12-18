@@ -24,11 +24,25 @@ import jakarta.interceptor.InvocationContext;
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.privateLookupIn;
 
-// TODO: rename/refactor when InterceptorFunction gets slimmed down
+/**
+ * A representation of a Jakarta Interceptors <em>interceptor method</em>.
+ *
+ * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
+ */
 @FunctionalInterface
 public interface InterceptorMethod {
 
 
+  /**
+   * Performs interception and returns any result.
+   *
+   * @param ic an {@link InvocationContext}; must not be {@code null}
+   *
+   * @return the result of interception, often computed by invoking the {@link InvocationContext#proceed()} method; the
+   * return value may be {@code null}
+   *
+   * @exception Exception if any error occurs
+   */
   public Object intercept(final InvocationContext ic) throws Exception;
 
 
@@ -37,10 +51,35 @@ public interface InterceptorMethod {
    */
 
 
+  /**
+   * Returns a new {@link InterceptorMethod} that adapts the supplied {@code static} {@link Method}.
+   *
+   * @param staticMethod a {@code static} {@link Method}; must not be {@code null}
+   *
+   * @return a new {@link InterceptorMethod}; never {@code null}
+   *
+   * @exception NullPointerException if {@code staticMethod} is {@code null}
+   */
   public static InterceptorMethod of(final Method staticMethod) {
     return of(staticMethod, null);
   }
 
+  /**
+   * Returns a new {@link InterceptorMethod} that adapts the supplied {@link Method} and the supplied {@link Supplier}
+   * of its receiver.
+   *
+   * @param m a {@link Method}; must not be {@code null}
+   *
+   * @param targetSupplier a {@link Supplier} of the supplied {@link Method}'s receiver; may be {@code null} in which
+   * case the supplied {@link Method} must be {@code static}
+   *
+   * @return a new {@link InterceptorMethod}; never {@code null}
+   *
+   * @exception NullPointerException if {@code m} is {@code null}
+   *
+   * @exception IllegalStateException if {@linkplain java.lang.invoke.MethodHandles.Lookup#unreflect(Method)
+   * unreflecting} fails
+   */
   public static InterceptorMethod of(final Method m, final Supplier<?> targetSupplier) {
     try {
       return of(privateLookupIn(m.getDeclaringClass(), lookup()).unreflect(m), targetSupplier);
@@ -49,10 +88,34 @@ public interface InterceptorMethod {
     }
   }
 
+  /**
+   * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle}.
+   *
+   * @param receiverlessOrBoundMethodHandle a {@link MethodHandle}; must not be {@code null}; must either not require a
+   * receiver or must be already {@linkplain MethodHandle#bindTo(Object) bound} to one
+   *
+   * @return a new {@link InterceptorMethod}; never {@code null}
+   *
+   * @exception NullPointerException if {@code receiverlessOrBoundMethodHandle} is {@code null}
+   */
   public static InterceptorMethod of(final MethodHandle receiverlessOrBoundMethodHandle) {
     return of(receiverlessOrBoundMethodHandle, null);
   }
 
+  /**
+   * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle} and the supplied {@link
+   * Supplier of its receiver}.
+   *
+   * @param mh a {@link MethodHandle}; must not be {@code null}
+   *
+   * @param receiverSupplier a {@link Supplier} of the supplied {@link MethodHandle}'s receiver; may be {@code null} in
+   * which case the supplied {@link MethodHandle} must either not require a receiver or must be already {@linkplain
+   * MethodHandle#bindTo(Object) bound} to one
+   *
+   * @return a new {@link InterceptorMethod}; never {@code null}
+   *
+   * @exception NullPointerException if {@code m} is {@code null}
+   */
   public static InterceptorMethod of(final MethodHandle mh, final Supplier<?> receiverSupplier) {
     final Object returnType = mh.type().returnType();
     if (returnType == void.class || returnType == Void.class) {

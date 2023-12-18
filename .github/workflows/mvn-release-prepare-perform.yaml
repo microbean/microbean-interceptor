@@ -1,0 +1,126 @@
+name: 'Workflow: Maven Release: Prepare and Perform'
+run-name: 'Workflow Run: Maven Release: Prepare and Perform'
+on:
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        default: true
+        description: 'Dry run?'
+        type: 'boolean'
+      mvnDebug:
+        default: false
+        description: 'Debug?'
+        type: 'boolean'
+      mvnTransferLogging:
+        default: false
+        description: 'Log Maven artifact transfers?'
+        type: 'boolean'
+jobs:
+  job-mvn-release-prepare-perform:
+    name: 'Job: Maven Release: Prepare and Perform'
+    permissions:
+      contents: 'read'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - id: 'checkout'
+        name: 'Step: Check Out Project'
+        uses: 'actions/checkout@v4'
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - id: 'setup-java'
+        name: 'Step: Set Up Java and Maven'
+        uses: 'actions/setup-java@v3'
+        with:
+          cache: 'maven'
+          distribution: 'temurin'
+          gpg-passphrase: 'GPG_PASSPHRASE'
+          gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
+          java-version: '11'
+          mvn-toolchain-id: 'Temurin 11'
+          mvn-toolchain-vendor: 'openjdk' # see ../../pom.xml
+          server-id: 'sonatype-oss-repository-hosting' # see https://github.com/microbean/microbean-parent/blob/master/pom.xml#L38
+          server-password: 'SONATYPE_OSSRH_PASSWORD'
+          server-username: 'SONATYPE_OSSRH_USERNAME'
+      - id: 'setup-askpass'
+        name: 'Step: Set Up GIT_ASKPASS'
+        run: |
+          install -m 700 /dev/null "${RUNNER_TEMP}/.askpass" # atomically create empty file with appropriate permissions
+          cat >> "${RUNNER_TEMP}/.askpass" <<<'#!/bin/bash
+          case "${1}" in
+              Username*) exec echo x-access-token ;;
+              Password*) exec echo "${PUSH_TOKEN}" ;;
+          esac'
+      - id: 'setup-gpg'
+        name: 'Step: Set Up GPG'
+        run: |
+          echo 'pinentry-mode loopback' >> ~/.gnupg/gpg.conf
+      - id: 'mvn-release-prepare'
+        name: 'Step: Maven Release: Prepare, Perform and Publish Site'
+        env:
+          DRY_RUN: '${{ inputs.dryRun }}'
+          GIT_ASKPASS: '${{ runner.temp }}/.askpass'
+          GPG_PASSPHRASE: '${{ secrets.GPG_PASSPHRASE }}'
+          MVN_DEBUG: ${{ inputs.mvnDebug && '--debug' || '' }}
+          MVN_TRANSFER_LOGGING: ${{ inputs.mvnTransferLogging && '' || '--no-transfer-progress' }}
+          PUSH_TOKEN : '${{ secrets.PUSH_TOKEN }}' # critical; see ${GIT_ASKPASS} file
+          SCM_GIT_HTTPS_URL: 'scm:git:${{ github.server_url }}/${{ github.repository }}.git'
+          SONATYPE_OSSRH_PASSWORD: '${{ secrets.SONATYPE_OSSRH_PASSWORD }}'
+          SONATYPE_OSSRH_STAGING_PROFILE_ID: '${{ vars.SONATYPE_OSSRH_STAGING_PROFILE_ID }}'
+          SONATYPE_OSSRH_USERNAME: '${{ secrets.SONATYPE_OSSRH_USERNAME }}'
+        shell: 'bash -e {0}'
+        run: >
+          git config --global user.email 'ci@microbean.org'
+
+          git config --global user.name 'microbean'
+
+          echo "::group::Running mvn prepare"
+          
+          mvn --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:prepare
+          -DdryRun="${DRY_RUN}"
+          -Darguments="${MVN_TRANSFER_LOGGING}"
+          -Dscm.url="${SCM_GIT_HTTPS_URL}"
+          
+          scm_tag="$(grep '^scm.tag=' release.properties | cut -f 2 -d =)"
+
+          echo "Prepared ${scm_tag}" >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "scm_tag=${scm_tag}" >> "${GITHUB_OUTPUT}"
+
+          echo "::endgroup::"
+
+          echo "::group::Running mvn perform"
+          
+          set +e
+
+          {
+          mvn --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:perform
+          -Darguments="${MVN_TRANSFER_LOGGING} -Dscmpublish.dryRun=${DRY_RUN} -Dscmpublish.pubScmUrl=${SCM_GIT_HTTPS_URL} -DskipTests -DstagingProfileId=${SONATYPE_OSSRH_STAGING_PROFILE_ID}"
+          -DdryRun="${DRY_RUN}"
+          -Dgoals="verify,post-site,scm-publish:publish-scm,deploy"
+          -Dscm.url="${SCM_GIT_HTTPS_URL}"
+          |
+          tee /dev/fd/3
+          |
+          grep --invert-match --silent 'Java class com.sonatype.nexus.staging.api.dto.StagingProfileRepositoryDTO' || cat > /dev/null
+          ;
+          }
+          3>&1
+
+          exit_codes=(${PIPESTATUS[@]})
+
+          echo "::endgroup::"
+          
+          set -e
+
+          if [ "${exit_codes[2]}" -ne 0 ] ; then
+            # grep "failed" (found com.sonatype.nexus.staging.api.dto.StagingProfileRepositoryDTO) and mvn failed
+            echo "Released ${scm_tag} successfully, but verify that the staging repository was successfully released" >> "${GITHUB_STEP_SUMMARY}";
+            # Treat this as a successful run
+            exit 0;
+          elif [ "${exit_codes[0]}" -eq 0 ] ; then
+            # mvn succeeded and grep "succeeded" (did not find com.sonatype.nexus.staging.api.dto.StagingProfileRepositoryDTO)
+            echo "Released ${scm_tag} successfully" >> "${GITHUB_STEP_SUMMARY}";
+          fi
+
+          exit "${exit_codes[0]}"

@@ -1,0 +1,30 @@
+name: 'Workflow: Maven Verify'
+run-name: 'Workflow Run: Maven Verify'
+on:
+  - 'pull_request'
+  - 'push'
+jobs:
+  job-mvn-verify:
+    name: 'Job: Maven Verify'
+    permissions:
+      contents: 'read'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - id: 'checkout'
+        name: 'Step: Checkout'
+        uses: 'actions/checkout@v4'
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - id: 'setup-java'
+        name: 'Step: Set Up Java and Maven'
+        uses: 'actions/setup-java@v3'
+        with:
+          cache: 'maven'
+          distribution: 'temurin'
+          java-version: '11'
+          mvn-toolchain-id: 'Temurin 11'
+          mvn-toolchain-vendor: 'openjdk' # see ../../pom.xml
+      - id: 'mvn-verify'
+        name: 'Step: Maven Verify'
+        run: 'mvn --batch-mode --color never --errors --no-transfer-progress -Dorg.slf4j.simpleLogger.defaultLogLevel=info verify'
