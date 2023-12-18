@@ -15,14 +15,12 @@
 /**
  * Provides packages related to implementing interceptors.
  *
- * @author <a href="https://about.me/lairdnelson" target="_parent">Laird Nelson</a>
+ * @author <a href="https://about.me/lairdnelson" target="_top">Laird Nelson</a>
  */
 module org.microbean.interceptor {
 
-  requires transitive jakarta.interceptor;
-  requires org.microbean.invoke;
-  requires transitive org.microbean.qualifier;
-
   exports org.microbean.interceptor;
+
+  requires transitive jakarta.interceptor;
 
 }
