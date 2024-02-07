@@ -1,6 +1,6 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2023 microBean™.
+ * Copyright © 2023–2024 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+// This is really more of an exploratory class than a test of anything in the org.microbean.interceptor package.
 final class TestLambdaMetafactory {
 
   private TestLambdaMetafactory() {
@@ -112,7 +113,7 @@ final class TestLambdaMetafactory {
     } else if (aroundInvokeMethodType.parameterType(1) != InvocationContext.class) {
       throw new IllegalArgumentException("aroundInvokeMethodType.methodType().parameterType(0) != InvocationContext.class: " + aroundInvokeMethodType);
     }
-    
+
     final ConstantCallSite metafactory =
       (ConstantCallSite)metafactory(lookup,
                                     "apply",
@@ -126,7 +127,7 @@ final class TestLambdaMetafactory {
     }
 
     // See https://stackoverflow.com/a/77060967/208288
-    // 
+    //
     // If we want to use invokeExact() on target/factory, which we do here because we don't know how often the Function
     // we return will be invoked, we need to change the type of its receiver parameter to permit the invokeExact call to
     // work in this use case. Normally the symbolic type descriptor kind of does this for you if I understand right, but
@@ -150,10 +151,10 @@ final class TestLambdaMetafactory {
       }
     };
   }
-  
-  private final <T> Function<T, Function<InvocationContext, Object>> frobnicate(final Lookup lookup,
-                                                                                final MethodHandle aroundInvokeMethod,
-                                                                                final Class<T> receiverType)
+
+  private final <T> Function<T, InterceptorMethod> frobnicate(final Lookup lookup,
+                                                              final MethodHandle aroundInvokeMethod,
+                                                              final Class<T> receiverType)
     throws Throwable {
     Objects.requireNonNull(receiverType); // for now
     final MethodType aroundInvokeMethodType = aroundInvokeMethod.type();
@@ -172,18 +173,18 @@ final class TestLambdaMetafactory {
     } else if (aroundInvokeMethodType.parameterType(1) != InvocationContext.class) {
       throw new IllegalArgumentException("aroundInvokeMethodType.methodType().parameterType(0) != InvocationContext.class: " + aroundInvokeMethodType);
     }
-    
+
     final ConstantCallSite ccs =
       (ConstantCallSite)metafactory(lookup,
-                                    "apply",
-                                    methodType(Function.class, receiverType), // Function is the functional interface we want. receiverType is a capture.
-                                    methodType(Object.class, Object.class), // Function<Object, InvocationContext> erasure
+                                    "intercept",
+                                    methodType(InterceptorMethod.class, receiverType), // InterceptorMethod is the functional interface we want. receiverType is a capture.
+                                    methodType(Object.class, InvocationContext.class),
                                     aroundInvokeMethod,
                                     methodType(Object.class, InvocationContext.class));
     final MethodHandle factory = ccs.getTarget();
     return t -> {
       try {
-        return (Function<InvocationContext, Object>)factory.invoke(t);
+        return (InterceptorMethod)factory.invoke(t);
       } catch (RuntimeException | Error e) {
         throw e;
       } catch (final InterruptedException e) {
@@ -193,18 +194,16 @@ final class TestLambdaMetafactory {
         throw new IllegalStateException(e.getMessage(), e);
       }
     };
-    // return ccs.getTarget();
   }
 
   @Test
   final void testFrobnicate() throws Throwable {
     final Lookup lookup = lookup();
     MethodHandle mh = lookup.findVirtual(this.getClass(), "aroundInvokeVirtual", methodType(Object.class, InvocationContext.class));
-    Function<TestLambdaMetafactory, Function<InvocationContext, Object>> factory = frobnicate(lookup, mh, TestLambdaMetafactory.class);
-    final Function<InvocationContext, Object> f = factory.apply(this);
-    // final Function<InvocationContext, Object> f = (Function<InvocationContext, Object>)mh.invokeExact(this);
+    Function<TestLambdaMetafactory, InterceptorMethod> factory = frobnicate(lookup, mh, TestLambdaMetafactory.class);
+    final InterceptorMethod f = factory.apply(this);
     assertNotNull(f);
-    f.apply(new SimpleInvocationContext());
+    f.intercept(new SimpleInvocationContext());
   }
 
   @Test

@@ -283,7 +283,7 @@
     <detectJavaApiLink>false</detectJavaApiLink>
     <links>https://docs.oracle.com/en/java/javase/11/docs/api,https://jakarta.ee/specifications/interceptors/2.1/apidocs/</links>
 
-    <!-- maven-release-plugin properties; see http://maven.apache.org/maven-release/maven-release-plugin/ -->
+    <!-- maven-release-plugin properties; see https://maven.apache.org/maven-release/maven-release-plugin/ -->
     <goals>deploy,post-site,scm-publish:publish-scm</goals>
 
     <scm.url>scm:git:git@github.com:microbean/microbean-interceptor.git</scm.url>
