@@ -28,7 +28,7 @@ Maven dependency:
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
   <!-- Always check https://search.maven.org/artifact/org.microbean/microbean-interceptor for up-to-date available versions. -->
-  <version>0.2.1</version>
+  <version>0.2.2</version>
 </dependency>
 ```
 

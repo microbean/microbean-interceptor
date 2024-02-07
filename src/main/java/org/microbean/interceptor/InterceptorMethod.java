@@ -1,6 +1,6 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2023 microBean™.
+ * Copyright © 2023–2024 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -47,14 +47,15 @@ public interface InterceptorMethod {
 
 
   /*
-   * Static methods.
+   * Public static methods.
    */
 
 
   /**
    * Returns a new {@link InterceptorMethod} that adapts the supplied {@code static} {@link Method}.
    *
-   * @param staticMethod a {@code static} {@link Method}; must not be {@code null}
+   * @param staticMethod a {@code static} {@link Method}; must not be {@code null}; must accept exactly one {@link
+   * InvocationContext}-typed argument
    *
    * @return a new {@link InterceptorMethod}; never {@code null}
    *
@@ -68,23 +69,24 @@ public interface InterceptorMethod {
    * Returns a new {@link InterceptorMethod} that adapts the supplied {@link Method} and the supplied {@link Supplier}
    * of its receiver.
    *
-   * @param m a {@link Method}; must not be {@code null}
+   * @param m a {@link Method}; must not be {@code null}; must accept exactly one {@link InvocationContext}-typed
+   * argument
    *
-   * @param targetSupplier a {@link Supplier} of the supplied {@link Method}'s receiver; may be {@code null} in which
-   * case the supplied {@link Method} must be {@code static}
+   * @param targetSupplier a {@link Supplier} of the supplied {@link Method}'s receiver; often memoized; may be {@code
+   * null} in which case the supplied {@link Method} must be {@code static}
    *
    * @return a new {@link InterceptorMethod}; never {@code null}
    *
    * @exception NullPointerException if {@code m} is {@code null}
    *
-   * @exception IllegalStateException if {@linkplain java.lang.invoke.MethodHandles.Lookup#unreflect(Method)
+   * @exception InterceptorException if {@linkplain java.lang.invoke.MethodHandles.Lookup#unreflect(Method)
    * unreflecting} fails
    */
   public static InterceptorMethod of(final Method m, final Supplier<?> targetSupplier) {
     try {
       return of(privateLookupIn(m.getDeclaringClass(), lookup()).unreflect(m), targetSupplier);
     } catch (final IllegalAccessException e) {
-      throw new IllegalStateException(e.getMessage(), e);
+      throw new InterceptorException(e.getMessage(), e);
     }
   }
 
@@ -92,7 +94,8 @@ public interface InterceptorMethod {
    * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle}.
    *
    * @param receiverlessOrBoundMethodHandle a {@link MethodHandle}; must not be {@code null}; must either not require a
-   * receiver or must be already {@linkplain MethodHandle#bindTo(Object) bound} to one
+   * receiver or must be already {@linkplain MethodHandle#bindTo(Object) bound} to one; must accept exactly one {@link
+   * InvocationContext}-typed argument
    *
    * @return a new {@link InterceptorMethod}; never {@code null}
    *
@@ -106,11 +109,13 @@ public interface InterceptorMethod {
    * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle} and the supplied {@link
    * Supplier of its receiver}.
    *
-   * @param mh a {@link MethodHandle}; must not be {@code null}
+   * @param mh a {@link MethodHandle}; must not be {@code null}; must either accept two arguments where the first
+   * argument's type is a valid receiver type and the second argument's type is {@link InvocationContext}, or one
+   * argument whose type is {@link InvocationContext}
    *
-   * @param receiverSupplier a {@link Supplier} of the supplied {@link MethodHandle}'s receiver; may be {@code null} in
-   * which case the supplied {@link MethodHandle} must either not require a receiver or must be already {@linkplain
-   * MethodHandle#bindTo(Object) bound} to one
+   * @param receiverSupplier a {@link Supplier} of the supplied {@link MethodHandle}'s receiver; often memoized; may be
+   * {@code null} in which case the supplied {@link MethodHandle} must either not require a receiver or must be already
+   * {@linkplain MethodHandle#bindTo(Object) bound} to one
    *
    * @return a new {@link InterceptorMethod}; never {@code null}
    *
@@ -130,9 +135,9 @@ public interface InterceptorMethod {
           throw e;
         } catch (final InterruptedException e) {
           Thread.currentThread().interrupt();
-          throw new IllegalStateException(e.getMessage(), e);
+          throw new InterceptorException(e.getMessage(), e);
         } catch (final Throwable e) {
-          throw new IllegalStateException(e.getMessage(), e);
+          throw new InterceptorException(e.getMessage(), e);
         }
         return null;
       };
@@ -143,6 +148,12 @@ public interface InterceptorMethod {
     return ic -> invokeExact(unboundInterceptorMethod, receiverSupplier, ic);
   }
 
+
+  /*
+   * Private static methods.
+   */
+
+
   private static Object invokeExact(final MethodHandle mh, final InvocationContext ic) {
     try {
       return mh.invokeExact(ic);
@@ -150,9 +161,9 @@ public interface InterceptorMethod {
       throw e;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException(e.getMessage(), e);
+      throw new InterceptorException(e.getMessage(), e);
     } catch (final Throwable e) {
-      throw new IllegalStateException(e.getMessage(), e);
+      throw new InterceptorException(e.getMessage(), e);
     }
   }
 
@@ -163,9 +174,9 @@ public interface InterceptorMethod {
       throw e;
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException(e.getMessage(), e);
+      throw new InterceptorException(e.getMessage(), e);
     } catch (final Throwable e) {
-      throw new IllegalStateException(e.getMessage(), e);
+      throw new InterceptorException(e.getMessage(), e);
     }
   }
 
