@@ -1,6 +1,6 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2022–2023 microBean™.
+ * Copyright © 2022–2024 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -127,7 +127,7 @@ final class TestChain {
   @Test
   final void testUninterceptedAdd() throws Exception {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final Chain chain = new Chain(List.of(), Frobnicator::new, add, new Object[] { 1, 2 });
+    final Chain chain = new Chain(List.of(), Frobnicator::new, add, () -> new Object[] { 1, 2 });
     assertSame(add, chain.getMethod());
     assertEquals(Integer.valueOf(3), chain.call());
     assertFalse(construct);
@@ -142,7 +142,7 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, add, new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, add, () -> new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(add, chain.getMethod());
     final Object result = chain.call();
@@ -159,7 +159,7 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, ruminate, new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, ruminate, () -> new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(ruminate, chain.getMethod());
     final Object result = chain.call();
@@ -176,7 +176,7 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, voidLambdaize, new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, voidLambdaize, () -> new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(voidLambdaize, chain.getMethod());
     final Object result = chain.call();
@@ -193,7 +193,7 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, lambdaize, new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, lambdaize, () -> new Object[] { 1, 2 });
     assertNotNull(chain.getTarget());
     assertSame(lambdaize, chain.getMethod());
     final Object result = chain.call();
