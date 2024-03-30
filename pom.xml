@@ -4,7 +4,7 @@
 
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
-  <version>0.2.4-SNAPSHOT</version>
+  <version>0.2.4</version>
 
   <parent>
     <groupId>org.microbean</groupId>
@@ -22,7 +22,7 @@
     <connection>${scm.url}</connection>
     <developerConnection>${scm.url}</developerConnection>
     <url>https://github.com/microbean/microbean-interceptor/</url>
-    <tag>HEAD</tag>
+    <tag>v0.2.4</tag>
   </scm>
 
   <distributionManagement>
