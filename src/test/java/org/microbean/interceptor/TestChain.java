@@ -176,7 +176,7 @@ final class TestChain {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, voidLambdaize, () -> new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, voidLambdaize, () -> new Object[] { new Object[] { 1, 2 } });
     assertNotNull(chain.getTarget());
     assertSame(voidLambdaize, chain.getMethod());
     final Object result = chain.call();
@@ -190,10 +190,11 @@ final class TestChain {
   @Test
   final void testAroundInvokeOnLambdaize() throws Exception {
     final Method lambdaize = Frobnicator.class.getDeclaredMethod("lambdaize", Object[].class);
+    assertEquals(1, lambdaize.getParameterTypes().length);
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Chain chain = new Chain(ims, Frobnicator::new, lambdaize, () -> new Object[] { 1, 2 });
+    final Chain chain = new Chain(ims, Frobnicator::new, lambdaize, () -> new Object[] { new Object[] { 1, 2 } });
     assertNotNull(chain.getTarget());
     assertSame(lambdaize, chain.getMethod());
     final Object result = chain.call();
