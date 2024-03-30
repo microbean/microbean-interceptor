@@ -21,6 +21,7 @@ import java.lang.invoke.VarHandle;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,8 +30,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import java.util.concurrent.atomic.AtomicReference;
-
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -63,9 +63,12 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   private static final VarHandle ARGUMENTS;
 
+  private static final VarHandle TARGET;
+
   static {
     try {
       ARGUMENTS = lookup.findVarHandle(Chain.class, "arguments", Object[].class);
+      TARGET = lookup.findVarHandle(Chain.class, "target", Object.class);
     } catch (final IllegalAccessException | NoSuchFieldException e) {
       throw (ExceptionInInitializerError)new ExceptionInInitializerError(e.getMessage()).initCause(e);
     }
@@ -85,15 +88,19 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   private final Supplier<?> timerSupplier;
 
-  private final AtomicReference<Object> targetReference;
-
   private final Supplier<?> targetSupplier;
-
-  private final Supplier<?> proceedImplementation;
 
   private final Supplier<? extends Object[]> argumentsSupplier;
 
+  private final Consumer<? super Object[]> setParametersImplementation;
+
+  private final Callable<?> proceedImplementation;
+
+  private final Chain targetHost;
+
   private volatile Object[] arguments;
+
+  private volatile Object target;
 
 
   /*
@@ -128,10 +135,11 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.constructorSupplier = Chain::returnNull;
     this.methodSupplier = Chain::returnNull;
     this.timerSupplier = Chain::returnNull;
-    this.targetReference = new AtomicReference<>();
     this.targetSupplier = Chain::returnNull;
+    this.targetHost = this;
     this.proceedImplementation = Chain::returnNull;
     this.argumentsSupplier = Chain::emptyObjectArray;
+    this.setParametersImplementation = Chain::throwIllegalStateException;
     this.arguments = EMPTY_OBJECT_ARRAY;
   }
 
@@ -158,15 +166,17 @@ public class Chain implements Callable<Object>, InvocationContext {
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier) {
     this(interceptorMethods,
-         Chain::returnNull, // terminal function
+         // Chain::returnNull, // terminal function
+         null, // terminal function; null on purpose
          false, // set target
          new ConcurrentHashMap<>(),
          Chain::returnNull, // constructor supplier
          Chain::returnNull, // method supplier
          targetSupplier,
          Chain::emptyObjectArray, // arguments supplier
+         Chain::sink, // arguments validator
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
   }
 
   /**
@@ -189,9 +199,12 @@ public class Chain implements Callable<Object>, InvocationContext {
    * @param terminalConstructor the {@link Constructor} being intercepted; must not be {@code null}
    *
    * @exception NullPointerException if {@code terminalConstructor} is {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final Constructor<?> terminalConstructor) {
+               final Constructor<?> terminalConstructor)
+    throws IllegalAccessException {
     this(interceptorMethods,
          terminalFunctionOf(terminalConstructor),
          true, // set target
@@ -200,8 +213,9 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::returnNull, // method supplier
          Chain::returnNull, // targetSupplier (initial target supplier)
          Chain::emptyObjectArray, // arguments supplier
+         args -> validate(terminalConstructor.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
   }
 
   /**
@@ -225,10 +239,13 @@ public class Chain implements Callable<Object>, InvocationContext {
    * null}
    *
    * @exception NullPointerException if {@code terminalConstructor} is {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Constructor<?> terminalConstructor,
-               final Supplier<? extends Object[]> argumentsSupplier) {
+               final Supplier<? extends Object[]> argumentsSupplier)
+    throws IllegalAccessException {
     this(interceptorMethods,
          terminalFunctionOf(terminalConstructor),
          true, // set target
@@ -237,8 +254,9 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::returnNull, // method supplier
          Chain::returnNull, // targetSupplier (initial target supplier)
          argumentsSupplier,
+         args -> validate(terminalConstructor.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
   }
 
   /**
@@ -261,10 +279,13 @@ public class Chain implements Callable<Object>, InvocationContext {
    * @param terminalMethod the {@link Method} to intercept; must not be {@code null}
    *
    * @exception NullPointerException if {@code terminalMethod} is {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
-               final Method terminalMethod) {
+               final Method terminalMethod)
+    throws IllegalAccessException {
     this(interceptorMethods,
          terminalFunctionOf(terminalMethod, targetSupplier),
          false, // don't set target
@@ -273,8 +294,9 @@ public class Chain implements Callable<Object>, InvocationContext {
          () -> terminalMethod,
          targetSupplier,
          Chain::emptyObjectArray, // arguments supplier
+         args -> validate(terminalMethod.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
   }
 
   /**
@@ -299,11 +321,14 @@ public class Chain implements Callable<Object>, InvocationContext {
    * @param argumentsSupplier a {@link Supplier} supplying the arguments for the {@link Method}; may be {@code null}
    *
    * @exception NullPointerException if {@code terminalMethod} is {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
                final Method terminalMethod,
-               final Supplier<? extends Object[]> argumentsSupplier) {
+               final Supplier<? extends Object[]> argumentsSupplier)
+    throws IllegalAccessException {
     this(interceptorMethods,
          terminalFunctionOf(terminalMethod, targetSupplier),
          false, // don't set target
@@ -312,8 +337,50 @@ public class Chain implements Callable<Object>, InvocationContext {
          () -> terminalMethod,
          targetSupplier,
          argumentsSupplier,
+         // Chain::sink, // arguments validator
+         args -> validate(terminalMethod.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
+  }
+
+  /**
+   * Creates a new {@link Chain} for around-construct interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param terminalFunction the terminal {@link Function} to intercept; must not be {@code null}
+   *
+   * @param argumentsSupplier a {@link Supplier} supplying the arguments for the terminal {@link Function}; may be
+   * {@code null}
+   *
+   * @exception NullPointerException if {@code terminalFunction} is {@code null}
+   */
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final Function<? super Object[], ?> terminalFunction,
+               final Supplier<? extends Object[]> argumentsSupplier) {
+    this(interceptorMethods,
+         Objects.requireNonNull(terminalFunction, "terminalFunction"),
+         true, // set target
+         new ConcurrentHashMap<>(),
+         Chain::returnNull, // constructor supplier
+         Chain::returnNull, // method supplier
+         Chain::returnNull, // target supplier (won't ever be consulted/invoked; target is set by terminalFunction directly)
+         argumentsSupplier,
+         Chain::sink, // arguments validator
+         Chain::returnNull, // timer supplier
+         null); // targetHost
   }
 
   /**
@@ -341,6 +408,8 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @param argumentsSupplier a {@link Supplier} supplying the arguments for the terminal {@link Function}; may be
    * {@code null}
+   *
+   * @exception NullPointerException if {@code terminalFunction} is {@code null}
    */
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier,
@@ -348,17 +417,19 @@ public class Chain implements Callable<Object>, InvocationContext {
                final boolean setTarget, // is the terminal function effectively a constructor?
                final Supplier<? extends Object[]> argumentsSupplier) {
     this(interceptorMethods,
-         terminalFunction,
+         Objects.requireNonNull(terminalFunction, "terminalFunction"),
          setTarget,
          new ConcurrentHashMap<>(),
          Chain::returnNull, // constructor supplier
          Chain::returnNull, // method supplier
          targetSupplier,
          argumentsSupplier,
+         Chain::sink, // arguments validator
          Chain::returnNull, // timer supplier
-         new AtomicReference<>());
+         null); // targetHost
   }
 
+  // Everything is nullable.
   private Chain(List<? extends InterceptorMethod> interceptorMethods,
                 final Function<? super Object[], ?> terminalFunction,
                 final boolean setTarget,
@@ -367,49 +438,57 @@ public class Chain implements Callable<Object>, InvocationContext {
                 final Supplier<? extends Method> methodSupplier,
                 final Supplier<?> targetSupplier,
                 final Supplier<? extends Object[]> argumentsSupplier,
+                final Consumer<? super Object[]> argumentsValidator,
                 final Supplier<?> timerSupplier,
-                final AtomicReference<Object> targetReference) {
+                final Chain targetHost) {
     super();
     this.contextData = contextData == null ? new ConcurrentHashMap<>() : contextData;
     this.constructorSupplier = constructorSupplier == null ? Chain::returnNull : constructorSupplier;
     this.methodSupplier = methodSupplier == null ? Chain::returnNull : methodSupplier;
     this.argumentsSupplier = argumentsSupplier == null ? Chain::emptyObjectArray : argumentsSupplier;
     this.timerSupplier = timerSupplier == null ? Chain::returnNull : timerSupplier;
-    this.targetReference = targetReference == null ? new AtomicReference<>() : targetReference;
     this.targetSupplier = targetSupplier == null ? Chain::returnNull : targetSupplier;
+    this.targetHost = targetHost == null ? this : targetHost;
     if (interceptorMethods == null || interceptorMethods.isEmpty()) {
       Objects.requireNonNull(terminalFunction, "terminalFunction");
+      if (argumentsValidator == null) {
+        this.setParametersImplementation = args -> this.setArguments(Chain::sink, args);
+      } else {
+        this.setParametersImplementation = args -> this.setArguments(argumentsValidator, args);
+      }
       if (setTarget) {
-        this.proceedImplementation = () -> this.targetReference.updateAndGet(v -> terminalFunction.apply(this.getParameters()));
+        this.proceedImplementation = () -> {
+          final Object t = terminalFunction.apply(this.getParameters());
+          TARGET.setVolatile(this.targetHost, t); // volatile write
+          return t;
+        };
       } else {
         this.proceedImplementation = () -> terminalFunction.apply(this.getParameters());
       }
     } else {
+      if (terminalFunction == null) {
+        this.setParametersImplementation = Chain::throwIllegalStateException;
+      } else if (argumentsValidator == null) {
+        this.setParametersImplementation = args -> this.setArguments(Chain::sink, args);
+      } else {
+        this.setParametersImplementation = args -> this.setArguments(argumentsValidator, args);
+      }
       interceptorMethods = List.copyOf(interceptorMethods);
       final InterceptorMethod im = interceptorMethods.get(0);
       final int size = interceptorMethods.size();
       final List<? extends InterceptorMethod> ims = size == 1 ? List.of() : interceptorMethods.subList(1, size);
-      this.proceedImplementation = () -> {
-        try {
-          return im.intercept(new Chain(ims,
-                                        terminalFunction,
-                                        setTarget,
-                                        this.contextData,
-                                        this::getConstructor,
-                                        this::getMethod,
-                                        this.targetSupplier,
-                                        this.argumentsSupplier,
-                                        this::getTimer,
-                                        this.targetReference));
-        } catch (final RuntimeException | Error e) {
-          throw e;
-        } catch (final InterruptedException e) {
-          Thread.currentThread().interrupt();
-          throw new IllegalStateException(e.getMessage(), e);
-        } catch (final Exception e) {
-          throw new IllegalStateException(e.getMessage(), e);
-        }
-      };
+      this.proceedImplementation =
+        () -> im.intercept(new Chain(ims,
+                                     terminalFunction,
+                                     setTarget,
+                                     this.contextData,
+                                     this::getConstructor,
+                                     this::getMethod,
+                                     this.targetSupplier,
+                                     this.argumentsSupplier,
+                                     argumentsValidator,
+                                     this::getTimer,
+                                     this.targetHost));
     }
   }
 
@@ -429,6 +508,13 @@ public class Chain implements Callable<Object>, InvocationContext {
     return this.constructorSupplier.get();
   }
 
+  /**
+   * Returns the context data {@link Map} shared by the current invocation.
+   *
+   * @return the context data {@link Map} shared by the current invocation; never {@code null}
+   *
+   * @see InvocationContext#getContextData()
+   */
   @Override
   public final Map<String, Object> getContextData() {
     return this.contextData;
@@ -439,7 +525,8 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @return the {@link Method} being intercepted, if available, or {@code null}
    */
-  // OK to return null in many cases; see for example https://issues.redhat.com/browse/EJBTHREE-1215
+  // OK to return null in many cases; see
+  // https://jakarta.ee/specifications/interceptors/2.1/jakarta-interceptors-spec-2.1#invocation_context
   @Override
   public final Method getMethod() {
     return this.methodSupplier.get();
@@ -453,15 +540,24 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @return any arguments in effect for the current interception; never {@code null}
    *
+   * @exception IllegalStateException if invoked within a lifecycle callback method that is not an {@link
+   * jakarta.interceptor.AroundConstruct AroundConstruct} callback
+   *
    * @see #setParameters(Object[])
    */
   @Override
   public final Object[] getParameters() {
     // Cloning etc. is not necessary; this whole API is stupid
-    if (this.arguments == null) { // volatile read
-      ARGUMENTS.compareAndSet(this, null, this.argumentsSupplier.get()); // volatile write
+    final Object[] arguments = this.arguments; // volatile read
+    if (arguments == null) {
+      try {
+        this.setParameters(this.argumentsSupplier.get());
+      } catch (final IllegalArgumentException e) {
+        throw new IllegalStateException(e.getMessage(), e);
+      }
+      return this.arguments; // volatile read
     }
-    return this.arguments; // volatile read but at this point it doesn't really matter
+    return arguments;
   }
 
   /**
@@ -471,10 +567,12 @@ public class Chain implements Callable<Object>, InvocationContext {
    */
   @Override
   public final Object getTarget() {
-    Object target = this.targetReference.get();
+    Object target = this.targetHost.target; // volatile read
     if (target == null) {
       target = this.targetSupplier.get();
-      return target == null || this.targetReference.compareAndSet(null, target) ? target : this.targetReference.get();
+      if (target != null && TARGET.compareAndSet(this.targetHost, null, target)) { // volatile write
+        target = this.targetHost.target; // volatile read
+      }
     }
     return target;
   }
@@ -489,7 +587,7 @@ public class Chain implements Callable<Object>, InvocationContext {
    * @see #getTarget()
    */
   public final void setTarget(final Object target) {
-    this.targetReference.set(Objects.requireNonNull(target, "target"));
+    TARGET.setVolatile(this.targetHost, Objects.requireNonNull(target, "target")); // volatile write
   }
 
   /**
@@ -520,13 +618,15 @@ public class Chain implements Callable<Object>, InvocationContext {
    * Applies the next interception in this {@link Chain}, or calls the terminal function, and returns the result of the
    * interception, which may be {@code null}.
    *
+   * <p>Overrides must not call {@link #call()} or an infinite loop will result.</p>
+   *
    * @return the result of proceeding, which may be {@code null}
    *
    * @exception Exception if an error occurs
    */
   @Override
   public Object proceed() throws Exception {
-    return this.proceedImplementation.get();
+    return this.proceedImplementation.call();
   }
 
   /**
@@ -537,12 +637,27 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @param arguments the arguments; may be {@code null}
    *
+   * @exception IllegalArgumentException if the arguments are invalid
+   *
+   * @exception IllegalStateException if invoked within a lifecycle callback method that is not an {@link
+   * jakarta.interceptor.AroundConstruct AroundConstruct} callback
+   *
    * @see #getParameters()
    */
   @Override
   public final void setParameters(final Object[] arguments) {
-    // Cloning etc. is not necessary; this whole API is stupid
-    this.arguments = arguments == null ? EMPTY_OBJECT_ARRAY : arguments; // volatile write
+    this.setParametersImplementation.accept(arguments);
+  }
+
+  private final void setArguments(final Consumer<? super Object[]> argumentsValidator, final Object[] arguments) {
+    if (arguments == null) {
+      argumentsValidator.accept(EMPTY_OBJECT_ARRAY);
+      this.arguments = EMPTY_OBJECT_ARRAY; // volatile write
+    } else {
+      // Cloning etc. is not necessary; this whole API is stupid
+      argumentsValidator.accept(arguments);
+      this.arguments = arguments; // volatile write
+    }
   }
 
 
@@ -560,14 +675,10 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @exception NullPointerException if {@code c} is {@code null}
    *
-   * @exception IllegalStateException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
-  public static final Function<Object[], Object> terminalFunctionOf(final Constructor<?> c) {
-    try {
-      return terminalFunctionOf(privateLookupIn(c.getDeclaringClass(), Chain.lookup).unreflectConstructor(c), null);
-    } catch (final IllegalAccessException e) {
-      throw new IllegalStateException(e.getMessage(), e);
-    }
+  public static final Function<Object[], Object> terminalFunctionOf(final Constructor<?> c) throws IllegalAccessException {
+    return terminalFunctionOf(privateLookupIn(c.getDeclaringClass(), Chain.lookup).unreflectConstructor(c), null);
   }
 
   /**
@@ -579,9 +690,9 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @exception NullPointerException if {@code staticMethod} is {@code null}
    *
-   * @exception IllegalStateException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
-  public static final Function<Object[], Object> terminalFunctionOf(final Method staticMethod) {
+  public static final Function<Object[], Object> terminalFunctionOf(final Method staticMethod) throws IllegalAccessException {
     return terminalFunctionOf(staticMethod, null);
   }
 
@@ -598,25 +709,22 @@ public class Chain implements Callable<Object>, InvocationContext {
    *
    * @exception NullPointerException if {@code m} is {@code null}
    *
-   * @exception IllegalStateException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
-  public static final Function<Object[], Object> terminalFunctionOf(final Method m, final Supplier<?> receiverSupplier) {
-    try {
-      return terminalFunctionOf(privateLookupIn(m.getDeclaringClass(), Chain.lookup).unreflect(m), receiverSupplier);
-    } catch (final IllegalAccessException e) {
-      throw new IllegalStateException(e.getMessage(), e);
-    }
+  public static final Function<Object[], Object> terminalFunctionOf(final Method m, final Supplier<?> receiverSupplier)
+    throws IllegalAccessException {
+    return terminalFunctionOf(privateLookupIn(m.getDeclaringClass(), Chain.lookup).unreflect(m), receiverSupplier);
   }
 
   /**
    * Creates and returns a {@link Function} encapsulating the supplied {@link MethodHandle}.
    *
-   * @param receiverlessMethodHandle a {@link MethodHandle}; must not be {@code null}. {@code mh} must be receiverless
-   * or {@linkplain MethodHandle#bindTo(Object) bound} to a receiver already.
+   * @param receiverlessMethodHandle a {@link MethodHandle}; must not be {@code null}; must be receiverless or
+   * {@linkplain MethodHandle#bindTo(Object) bound} to a receiver already.
    *
    * @return a {@link Function} encapsulating the supplied {@link MethodHandle}; never {@code null}
    *
-   * @exception NullPointerException if {@code mh} is {@code null}
+   * @exception NullPointerException if {@code receiverlessMethodHandle} is {@code null}
    */
   public static final Function<Object[], Object> terminalFunctionOf(final MethodHandle receiverlessMethodHandle) {
     return terminalFunctionOf(receiverlessMethodHandle, null);
@@ -626,7 +734,7 @@ public class Chain implements Callable<Object>, InvocationContext {
    * Creates and returns a {@link Function} encapsulating the supplied {@link MethodHandle}.
    *
    * @param mh a {@link MethodHandle}; must not be {@code null}. If {@code mh} is a {@link MethodHandle} requiring a
-   * receiver, then the supplied {@code receiverSupplier} will be used to supply its receiver
+   * receiver, then the supplied {@code receiverSupplier}, if non-{@code null}, will be used to supply its receiver
    *
    * @param receiverSupplier a {@link Supplier} of the receiver for the supplied {@link MethodHandle}; may be {@code
    * null} in which case the supplied {@link MethodHandle} must be receiverless
@@ -649,7 +757,7 @@ public class Chain implements Callable<Object>, InvocationContext {
         terminalFunction = mh;
         return ps -> invokeUnchecked(() -> terminalFunction.invokeExact());
       default:
-        terminalFunction = pc == 1 && mt.parameterType(0) == Object[].class ? mh : mh.asSpreader(Object[].class, pc);
+        terminalFunction = mh.asSpreader(Object[].class, pc);
         return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(ps));
       }
     }
@@ -663,7 +771,7 @@ public class Chain implements Callable<Object>, InvocationContext {
       terminalFunction = mh;
       return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(receiverSupplier.get()));
     default:
-      terminalFunction = pc == 2 && mt.parameterType(1) == Object[].class ? mh : mh.asSpreader(Object[].class, pc - 1);
+      terminalFunction = mh.asSpreader(Object[].class, pc - 1);
       return ps -> invokeUnchecked(() -> terminalFunction.invokeExact(receiverSupplier.get(), ps));
     }
   }
@@ -672,12 +780,206 @@ public class Chain implements Callable<Object>, InvocationContext {
     return null;
   }
 
-  private static final <T> T returnNull(final Object[] ignored) {
+  private static final <X, Y> X returnNull(final Y ignored) {
     return null;
   }
 
   private static final Object[] emptyObjectArray() {
     return EMPTY_OBJECT_ARRAY;
+  }
+
+  private static final <T> void sink(T ignored) {
+
+  }
+
+  private static final <X> void throwIllegalStateException(final X ignored) {
+    throw new IllegalStateException();
+  }
+
+  /**
+   * A convenience method that ensures that every element of the supplied {@code arguments} array can be assigned to a
+   * reference bearing the corresponding {@link Class} drawn from the supplied {@code parameterTypes} array.
+   *
+   * <p>Boxing, unboxing and widening conversions are taken into consideration.</p>
+   *
+   * <p>This method implements the logic implied, but nowhere actually specified, by the contract of {@link
+   * InvocationContext#setParameters(Object[])}.</p>
+   *
+   * @param parameterTypes an array of {@link Class} instances; may be {@code null}; must not contain {@code null}
+   * elements or {@code void.class}; must have a length equal to that of the supplied {@code arguments} array
+   *
+   * @param arguments an array of {@link Object}s; may be {@code null}; must have a length equal to that of the supplied
+   * {@code parameterTypes} array
+   *
+   * @exception IllegalArgumentException if not every element of the supplied {@code arguments} array can be assigned to
+   * a reference bearing the corresponding {@link Class} drawn from the supplied {@code parameterTypes} array
+   *
+   * @see #setParameters(Object[])
+   */
+  public static final void validate(final Class<?>[] parameterTypes, final Object[] arguments) {
+    final int parameterTypesLength = parameterTypes == null ? 0 : parameterTypes.length;
+    final int argumentsLength = arguments == null ? 0 : arguments.length;
+    if (argumentsLength != parameterTypesLength) {
+      throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                         "; arguments: " + Arrays.toString(arguments));
+    }
+    for (int i = 0; i < argumentsLength; i++) {
+      final Class<?> parameterType = parameterTypes[i];
+      if (parameterType == null || parameterType == void.class) {
+        throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                           "; arguments: " + Arrays.toString(arguments) +
+                                           "; parameter type: " + parameterType);
+      }
+      final Object argument = arguments[i];
+      if (argument == null) {
+        if (parameterType.isPrimitive() || parameterType != Void.class) {
+          throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                             "; arguments: " + Arrays.toString(arguments) +
+                                             "; parameter type: " + parameterType.getName() +
+                                             "; argument: null");
+        }
+      } else {
+        final Class<?> argumentType = argument.getClass();
+        if (parameterType != argumentType) {
+          if (parameterType == boolean.class) {
+            if (argumentType != Boolean.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: boolean" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Boolean.class) {
+            if (argumentType != boolean.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Boolean" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == byte.class) {
+            if (argumentType != Byte.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: byte" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Byte.class) {
+            if (argumentType != byte.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Byte" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == char.class) {
+            if (argumentType != Character.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: char" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Character.class) {
+            if (argumentType != char.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Character" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == double.class) {
+            if (argumentType != byte.class &&
+                argumentType != char.class &&
+                argumentType != Double.class &&
+                argumentType != float.class &&
+                argumentType != int.class &&
+                argumentType != long.class &&
+                argumentType != short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: double" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Double.class) {
+            if (argumentType != double.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Double" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == float.class) {
+            if (argumentType != byte.class &&
+                argumentType != char.class &&
+                argumentType != Float.class &&
+                argumentType != int.class &&
+                argumentType != long.class &&
+                argumentType != short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: float" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Float.class) {
+            if (argumentType != float.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Float" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == int.class) {
+            if (argumentType != byte.class &&
+                argumentType != char.class &&
+                argumentType != Integer.class &&
+                argumentType != short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: int; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Integer.class) {
+            if (argumentType != int.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Integer" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == long.class) {
+            if (argumentType != byte.class &&
+                argumentType != char.class &&
+                argumentType != int.class &&
+                argumentType != Long.class &&
+                argumentType != short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: long" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Long.class) {
+            if (argumentType != long.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Long" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == short.class) {
+            if (argumentType != byte.class &&
+                argumentType != Short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: byte" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Short.class) {
+            if (argumentType != short.class) {
+              throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                                 "; arguments: " + Arrays.toString(arguments) +
+                                                 "; parameter type: java.lang.Short" +
+                                                 "; argument type: " + argumentType.getName());
+            }
+          } else if (parameterType == Void.class || !parameterType.isAssignableFrom(argumentType)) {
+            throw new IllegalArgumentException("parameter types: " + Arrays.toString(parameterTypes) +
+                                               "; arguments: " + Arrays.toString(arguments) +
+                                               "; parameter type: " + parameterType.getName() +
+                                               "; argument type: " + argumentType.getName());
+          }
+        }
+      }
+    }
   }
 
 }
