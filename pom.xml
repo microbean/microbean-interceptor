@@ -4,7 +4,7 @@
 
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
-  <version>0.2.5-SNAPSHOT</version>
+  <version>0.3.0-SNAPSHOT</version>
 
   <parent>
     <groupId>org.microbean</groupId>
@@ -63,6 +63,12 @@
         <version>2.1.0</version>
       </dependency>
 
+      <dependency>
+        <groupId>org.microbean</groupId>
+        <artifactId>microbean-function</artifactId>
+        <version>0.0.69</version>
+      </dependency>
+
 
     </dependencies>
   </dependencyManagement>
@@ -76,6 +82,12 @@
     <dependency>
       <groupId>jakarta.interceptor</groupId>
       <artifactId>jakarta.interceptor-api</artifactId>
+      <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.microbean</groupId>
+      <artifactId>microbean-function</artifactId>
       <scope>compile</scope>
     </dependency>
 

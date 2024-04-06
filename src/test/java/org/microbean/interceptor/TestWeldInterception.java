@@ -1,6 +1,6 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2023 microBean™.
+ * Copyright © 2023–2024 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -40,6 +40,9 @@ import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 final class TestWeldInterception {
 
@@ -83,7 +86,7 @@ final class TestWeldInterception {
     //     Bean.businessMethod()
     b.businessMethod();
     assertEquals(1, ExternalInterceptor.count);
-    assertEquals(1, Bean.count);
+    assertEquals(2, Bean.count);
   }
 
   @Interceptor
@@ -102,7 +105,14 @@ final class TestWeldInterception {
     @AroundConstruct
     void aroundConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.aroundConstructMethod()");
+      assertNull(ic.getTarget());
       ic.proceed();
+      final Object target0 = ic.getTarget();
+      assertNotNull(target0);
+      ic.proceed();
+      final Object target1 = ic.getTarget();
+      assertNotNull(target1);
+      assertNotSame(target0, target1);
     }
 
     @PostConstruct
