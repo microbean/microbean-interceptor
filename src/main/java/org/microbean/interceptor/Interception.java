@@ -46,6 +46,15 @@ import static org.microbean.function.Suppliers.memoize;
 
 import static org.microbean.interceptor.LowLevelOperation.invokeUnchecked;
 
+/**
+ * An interception of a construction event, another lifecycle event, or a general purpose method or function.
+ *
+ * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
+ *
+ * @see #call()
+ *
+ * @see InvocationContext
+ */
 public final class Interception implements Callable<Object> {
 
 
@@ -121,8 +130,7 @@ public final class Interception implements Callable<Object> {
    * Creates a new {@link Interception} that performs around-construct interceptions.
    *
    * <p>If this constructor is used, an invocation of the {@link #call()} method will return the value of an invocation
-   * of the supplied {@link Constructor}'s {@link Constructor#newInstance(Object...) newInstance(Object...)} method, or
-   * {@code null} if the supplied {@link Constructor} is {@code null}.</p>
+   * of the supplied {@link Constructor}'s {@link Constructor#newInstance(Object...) newInstance(Object...)} method.</p>
    *
    * @param interceptorMethods a {@link Collection} of {@link InterceptorMethod}s; may, rather uselessly, be {@code
    * null}
@@ -198,12 +206,10 @@ public final class Interception implements Callable<Object> {
    * @param interceptorMethods a {@link Collection} of {@link InterceptorMethod}s; may, rather uselessly, be {@code
    * null}
    *
-   * @param terminalFunction the terminal {@link Function} being intercepted; must not be {@code null}
+   * @param terminalFunction the terminal {@link Function} being intercepted; may, rather uselessly, be {@code null}
    *
    * @param argumentsBootstrap a {@link Supplier} of initial arguments that will be supplied to the interception; may be
    * {@code null}
-   *
-   * @exception NullPointerException if {@code terminalFunction} is {@code null}
    *
    * @see #call()
    */
@@ -211,7 +217,7 @@ public final class Interception implements Callable<Object> {
                       final Function<? super Object[], ?> terminalFunction,
                       final Supplier<? extends Object[]> argumentsBootstrap) {
     this(interceptorMethods,
-         Objects.requireNonNull(terminalFunction, "terminalFunction"),
+         terminalFunction,
          true, // setTarget
          null, // constructorBootstrap
          null, // methodBootstrap,
@@ -222,9 +228,26 @@ public final class Interception implements Callable<Object> {
   }
 
   /*
-   * Around-invoke.
+   * Around-invoke or lifecycle.
    */
 
+  /**
+   * Creates a new {@link Interception} that performs around-invoke or lifecycle event interceptions.
+   *
+   * @param interceptorMethods a {@link Collection} of {@link InterceptorMethod}s; may be {@code null} if this
+   * interception is a lifecycle event interception
+   *
+   * @param method the {@link Method} to intercept; may be {@code null} if this interception is a lifecycle event
+   * interception
+   *
+   * @param targetBootstrap a {@link Supplier} of the target instance for the around-invoke invocation or for which a
+   * lifecycle event has occurred; may, rather uselessly, be {@code null}, and may, rather uselessly, return {@code
+   * null}; it is strongly recommended that this {@link Supplier} return a constant value
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   *
+   * @see #call()
+   */
   public Interception(final Collection<? extends InterceptorMethod> interceptorMethods,
                       final Method method,
                       final Supplier<?> targetBootstrap)
@@ -240,13 +263,32 @@ public final class Interception implements Callable<Object> {
          null); // timerBootstrap
   }
 
+  /**
+   * Creates a new {@link Interception} that performs around-invoke or lifecycle event interceptions.
+   *
+   * @param interceptorMethods a {@link Collection} of {@link InterceptorMethod}s; may be {@code null}
+   *
+   * @param method the {@link Method} to intercept; may be {@code null} if this interception is a lifecycle event
+   * interception
+   *
+   * @param targetBootstrap a {@link Supplier} of the target instance for the around-invoke invocation or for which a
+   * lifecycle event has occurred; may, rather uselessly, be {@code null}, and may, rather uselessly, return {@code
+   * null}; it is strongly recommended that this {@link Supplier} return a constant value
+   *
+   * @param argumentsBootstrap a {@link Supplier} of initial arguments that will be supplied to the interception; may be
+   * {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   *
+   * @see #call()
+   */
   public Interception(final Collection<? extends InterceptorMethod> interceptorMethods,
                       final Method method,
                       final Supplier<?> targetBootstrap,
                       final Supplier<? extends Object[]> argumentsBootstrap)
     throws IllegalAccessException {
     this(interceptorMethods,
-         method == null ? null : terminalFunctionOf(method, targetBootstrap(targetBootstrap)),
+         terminalFunctionOf(method, targetBootstrap(targetBootstrap)),
          false, // setTarget
          null, // constructorBootstrap
          methodBootstrap(method),
@@ -257,19 +299,39 @@ public final class Interception implements Callable<Object> {
   }
 
   /*
-   * Around-construct or around-invoke (but not lifecycle method).
+   * Around-construct, around-invoke or lifecycle.
    */
 
+  /**
+   * Creates a new {@link Interception} that performs around-construct, around-invoke or lifecycle event interceptions.
+   *
+   * @param interceptorMethods a {@link Collection} of {@link InterceptorMethod}s; may be {@code null}
+   *
+   * @param terminalFunction the terminal {@link Function} being intercepted; may be {@code null} if this is a lifecycle
+   * event interception
+   *
+   * @param aroundConstruct whether this is an around-construct interception
+   *
+   * @param targetBootstrap a {@link Supplier} of the target instance for an around-invoke invocation or for which a
+   * lifecycle event has occurred; may, rather uselessly, be {@code null}, and may, rather uselessly, return {@code
+   * null}; ignored if {@code aroundConstruct} is {@code true}
+   *
+   * @param argumentsBootstrap a {@link Supplier} of initial arguments that will be supplied to the interception; may be
+   * {@code null}
+   *
+   * @see #call()
+   */
   public Interception(final Collection<? extends InterceptorMethod> interceptorMethods,
                       final Function<? super Object[], ?> terminalFunction,
-                      final boolean setTarget,
+                      final boolean aroundConstruct,
+                      final Supplier<?> targetBootstrap,
                       final Supplier<? extends Object[]> argumentsBootstrap) {
     this(interceptorMethods,
-         setTarget ? Objects.requireNonNull(terminalFunction, "terminalFunction") : terminalFunction,
-         setTarget,
+         terminalFunction,
+         aroundConstruct,
          null, // constructorBootstrap
          null, // methodBootstrap
-         null, // targetBootstrap
+         targetBootstrap(targetBootstrap),
          argumentsBootstrap,
          null, // argumentsValidator
          null); // timerBootstrap
@@ -302,10 +364,10 @@ public final class Interception implements Callable<Object> {
         // Pathological (no interception; no terminal function).
         this.proceeder = Interception::returnNull;
       } else {
-        Objects.requireNonNull(targetBootstrap, "targetBootstrap");
+        final Supplier<?> tb = targetBootstrap == null ? Interception::returnNull : targetBootstrap;
         final List<InterceptorMethod> ims = List.copyOf(interceptorMethods);
         this.proceeder = () ->
-          new State(targetBootstrap)
+          new State(tb)
             .new Context(ims.iterator())
             .proceed();
       }
@@ -348,10 +410,10 @@ public final class Interception implements Callable<Object> {
           argumentsBootstrap == null ? Interception::emptyObjectArray : memoize(argumentsBootstrap); // memoized on purpose
         this.proceeder = () -> terminalFunction.apply(ab.get());
       } else {
-        Objects.requireNonNull(targetBootstrap, "targetBootstrap");
+        final Supplier<?> tb = targetBootstrap == null ? Interception::returnNull : targetBootstrap;
         final List<InterceptorMethod> ims = List.copyOf(interceptorMethods);
         this.proceeder = () ->
-          new State(targetBootstrap, argumentsBootstrap, argumentsValidator, true)
+          new State(tb, argumentsBootstrap, argumentsValidator, true)
             .new Context(ims.iterator(), terminalFunction)
             .proceed();
       }
@@ -367,6 +429,14 @@ public final class Interception implements Callable<Object> {
    */
 
 
+  /**
+   * Invokes the interception chain this {@link Interception} represents and returns the result, which may be {@code
+   * null}.
+   *
+   * @return the result of interception
+   *
+   * @exception Exception if an error occurs
+   */
   @Override // Callable<Object>
   public final Object call() throws Exception {
     return this.proceeder.call();
@@ -796,15 +866,15 @@ public final class Interception implements Callable<Object> {
       }
     }
 
-    public final Object[] arguments() {
+    private final Object[] arguments() {
       return this.argumentsReader.get();
     }
 
-    public final void arguments(final Object[] arguments) {
+    private final void arguments(final Object[] arguments) {
       this.argumentsInstaller.accept(arguments);
     }
 
-    public final Object target() {
+    private final Object target() {
       return this.targetReader.get();
     }
 
@@ -883,7 +953,6 @@ public final class Interception implements Callable<Object> {
       }
 
     }
-
 
   }
 
