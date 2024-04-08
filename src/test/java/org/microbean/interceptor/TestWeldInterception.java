@@ -106,19 +106,26 @@ final class TestWeldInterception {
     void aroundConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.aroundConstructMethod()");
       assertNull(ic.getTarget());
-      ic.proceed();
+      assertNull(ic.proceed());
       final Object target0 = ic.getTarget();
       assertNotNull(target0);
-      ic.proceed();
+      assertNull(ic.proceed());
       final Object target1 = ic.getTarget();
       assertNotNull(target1);
       assertNotSame(target0, target1);
     }
 
+    @AroundConstruct
+    Object anotherAroundConstructMethod(final InvocationContext ic) throws Exception {
+      System.out.println("ExternalInterceptor.anotherAroundConstructMethod()");
+      ic.proceed();
+      return Integer.valueOf(47);
+    }
+
     @PostConstruct
     void postConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.postConstructMethod()");
-      // ic.proceed();
+      ic.proceed(); // or not
     }
 
     @AroundInvoke

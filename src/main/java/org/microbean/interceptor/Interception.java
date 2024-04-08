@@ -388,8 +388,19 @@ public final class Interception implements Callable<Object> {
         this.proceeder = () -> {
           final State s = new State(argumentsBootstrap, argumentsValidator);
           final State.Context c = s.new Context(ims.iterator(), args -> s.target(terminalFunction.apply(args)));
-          final Object ignoredValue = c.proceed();
-          assert ignoredValue == null; // a weird necessary outcome of the Interceptors specification in this case
+          // This return-value-ignoring ic.proceed() call will look odd to future maintainers (future me).
+          //
+          // An around-construct interceptor method can have one of two signatures:
+          //
+          //   void <METHOD>(InvocationContext)
+          //   Object <METHOD>(InvocationContext) // this one is odd
+          //
+          // The one that returns Object is mainly so you can use the same method to intercept constructors and business
+          // methods. Its return value in a constructor interception scenario is basically undefined. In all known
+          // implementations the return value is always null. The only sanctioned way to get the new instance is by
+          // calling getTarget(). The return value of InvocationContext#proceed() is undefined in around-construct
+          // scenarios, so we drop it.
+          c.proceed();
           return c.getTarget();
         };
       } else {
