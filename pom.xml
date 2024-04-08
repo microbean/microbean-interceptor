@@ -63,12 +63,6 @@
         <version>2.1.0</version>
       </dependency>
 
-      <dependency>
-        <groupId>org.microbean</groupId>
-        <artifactId>microbean-function</artifactId>
-        <version>0.0.69</version>
-      </dependency>
-
 
     </dependencies>
   </dependencyManagement>
@@ -82,12 +76,6 @@
     <dependency>
       <groupId>jakarta.interceptor</groupId>
       <artifactId>jakarta.interceptor-api</artifactId>
-      <scope>compile</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.microbean</groupId>
-      <artifactId>microbean-function</artifactId>
       <scope>compile</scope>
     </dependency>
 

@@ -22,6 +22,5 @@ module org.microbean.interceptor {
   exports org.microbean.interceptor;
 
   requires transitive jakarta.interceptor;
-  requires org.microbean.function;
 
 }

@@ -21,6 +21,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.inject.se.SeContainer;
 import jakarta.enterprise.inject.se.SeContainerInitializer;
 
+import jakarta.enterprise.inject.spi.BeanManager;
+
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
@@ -87,6 +89,10 @@ final class TestWeldInterception {
     b.businessMethod();
     assertEquals(1, ExternalInterceptor.count);
     assertEquals(2, Bean.count);
+    final BeanManager bm = this.container.select(BeanManager.class).get();
+    // Create a contextual *instance* and note that a new interceptor is created
+    bm.resolve(bm.getBeans(Bean.class)).create(bm.createCreationalContext(null));
+    
   }
 
   @Interceptor
@@ -100,16 +106,17 @@ final class TestWeldInterception {
     ExternalInterceptor() {
       super();
       count++;
+      System.out.println("ExternalInterceptor.ExternalInterceptor()");
     }
 
     @AroundConstruct
     void aroundConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.aroundConstructMethod()");
       assertNull(ic.getTarget());
-      assertNull(ic.proceed());
+      ic.proceed();
       final Object target0 = ic.getTarget();
       assertNotNull(target0);
-      assertNull(ic.proceed());
+      ic.proceed();
       final Object target1 = ic.getTarget();
       assertNotNull(target1);
       assertNotSame(target0, target1);

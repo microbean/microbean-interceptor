@@ -13,6 +13,10 @@
  */
 package org.microbean.interceptor;
 
+import java.lang.System.Logger;
+
+import java.lang.annotation.Annotation;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,10 +44,11 @@ import java.util.function.Supplier;
 
 import jakarta.interceptor.InvocationContext;
 
+import static java.lang.System.getLogger;
+import static java.lang.System.Logger.Level.DEBUG;
+
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.privateLookupIn;
-
-import static org.microbean.function.Suppliers.memoize;
 
 import static org.microbean.interceptor.LowLevelOperation.invokeUnchecked;
 
@@ -65,6 +71,8 @@ public final class Interception implements Callable<Object> {
 
   private static final Object[] EMPTY_OBJECT_ARRAY = new Object[0];
 
+  private static final Logger LOGGER = getLogger(Interception.class.getName());
+
   private static final Optional<Object[]> OPTIONAL_EMPTY_OBJECT_ARRAY = Optional.of(EMPTY_OBJECT_ARRAY);
 
   private static final Lookup lookup = lookup();
@@ -78,6 +86,8 @@ public final class Interception implements Callable<Object> {
   private final Supplier<? extends Constructor<?>> constructorBootstrap;
 
   private final ConcurrentMap<String, Object> data;
+
+  private final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap;
 
   private final Supplier<? extends Method> methodBootstrap;
 
@@ -116,10 +126,11 @@ public final class Interception implements Callable<Object> {
          false, // setTarget
          null, // constructorBootstrap
          null, // methodBootstrap
-         targetBootstrap == null ? null : memoize(targetBootstrap),
+         targetBootstrap,
          null, // argumentsBootstrap,
          null, // argumentsValidator,
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /*
@@ -156,7 +167,8 @@ public final class Interception implements Callable<Object> {
          null, // targetBootstrap
          null, // argumentsBootstrap,
          argumentsValidator(constructor),
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /**
@@ -193,7 +205,8 @@ public final class Interception implements Callable<Object> {
          null, // targetBootstrap
          argumentsBootstrap,
          argumentsValidator(constructor),
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /**
@@ -224,7 +237,8 @@ public final class Interception implements Callable<Object> {
          null, // targetBootstrap
          argumentsBootstrap,
          null, // argumentsValidator,
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /*
@@ -260,7 +274,8 @@ public final class Interception implements Callable<Object> {
          targetBootstrap(targetBootstrap),
          null, // argumentsBootstrap
          argumentsValidator(method),
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /**
@@ -295,7 +310,8 @@ public final class Interception implements Callable<Object> {
          targetBootstrap(targetBootstrap),
          argumentsBootstrap,
          argumentsValidator(method),
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /*
@@ -334,26 +350,27 @@ public final class Interception implements Callable<Object> {
          targetBootstrap(targetBootstrap),
          argumentsBootstrap,
          null, // argumentsValidator
-         null); // timerBootstrap
+         null, // timerBootstrap
+         null); // interceptorBindingsBootstrap
   }
 
   /*
-   * Kitchen sink. In general, don't perform memoization etc. on any functional interface passed to this constructor,
-   * with the sole exception of argumentsBootstrap and then only in pathological cases. Everything is nullable, with
-   * null meaning, in general, "use a sensible default".
+   * Kitchen sink. Everything is nullable with null meaning, in general, "use a sensible default".
    */
 
   private Interception(final Collection<? extends InterceptorMethod> interceptorMethods,
                        final Function<? super Object[], ?> terminalFunction, // null means lifecycle event
                        final boolean setTarget, // ignored if interceptorMethods is null or empty
-                       final Supplier<? extends Constructor<?>> constructorBootstrap,
-                       final Supplier<? extends Method> methodBootstrap,
+                       final Supplier<? extends Constructor<?>> constructorBootstrap, // better be memoized
+                       final Supplier<? extends Method> methodBootstrap, // better be memoized
                        final Supplier<?> targetBootstrap, // ignored if terminalFunction is null or setTarget is true
                        final Supplier<? extends Object[]> argumentsBootstrap, // ignored if terminalFunction is null
                        final Consumer<? super Object[]> argumentsValidator, // ignored if terminalFunction is null
-                       final Supplier<?> timerBootstrap) {
+                       final Supplier<?> timerBootstrap, // better be memoized
+                       final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) { // better be memoized
     super();
     this.data = new ConcurrentHashMap<>();
+    this.interceptorBindingsBootstrap = interceptorBindingsBootstrap == null ? Set::of : interceptorBindingsBootstrap;
     if (terminalFunction == null) {
       // Lifecycle event interception. Intercepted by lifecycle callback interceptor methods.
       //
@@ -381,7 +398,7 @@ public final class Interception implements Callable<Object> {
       if (interceptorMethods == null || interceptorMethods.isEmpty()) {
         // Pathological (no interception; only the terminal constructor function).
         final Supplier<? extends Object[]> ab =
-          argumentsBootstrap == null ? Interception::emptyObjectArray : memoize(argumentsBootstrap); // memoized on purpose
+          argumentsBootstrap == null ? Interception::emptyObjectArray : argumentsBootstrap;
         this.proceeder = () -> terminalFunction.apply(ab.get());
       } else if (targetBootstrap == null) {
         final List<InterceptorMethod> ims = List.copyOf(interceptorMethods);
@@ -396,12 +413,15 @@ public final class Interception implements Callable<Object> {
           //   Object <METHOD>(InvocationContext) // this one is odd
           //
           // The one that returns Object is mainly so you can use the same method to intercept constructors and business
-          // methods. Its return value in a constructor interception scenario is basically undefined. In all known
-          // implementations the return value is always null. The only sanctioned way to get the new instance is by
-          // calling getTarget(). The return value of InvocationContext#proceed() is undefined in around-construct
-          // scenarios, so we drop it.
-          c.proceed();
-          return c.getTarget();
+          // methods. Its return value in a constructor interception scenario is basically undefined. In
+          // around-construct situations I'm not sure why you would rely on this value. We log it here just to make sure
+          // it doesn't get lost.
+          final Object v = c.proceed();
+          final Object t = c.getTarget();
+          if (v != t && LOGGER.isLoggable(DEBUG)) {
+            LOGGER.log(DEBUG, "around-construct proceed() return value: " + v + "; returning getTarget() return value: " + t);
+          }
+          return t;
         };
       } else {
         throw new IllegalArgumentException("setTarget: true; targetBootstrap: " + targetBootstrap);
@@ -418,7 +438,7 @@ public final class Interception implements Callable<Object> {
       if (interceptorMethods == null || interceptorMethods.isEmpty()) {
         // Pathological (no interception; only the terminal function).
         final Supplier<? extends Object[]> ab =
-          argumentsBootstrap == null ? Interception::emptyObjectArray : memoize(argumentsBootstrap); // memoized on purpose
+          argumentsBootstrap == null ? Interception::emptyObjectArray : argumentsBootstrap;
         this.proceeder = () -> terminalFunction.apply(ab.get());
       } else {
         final Supplier<?> tb = targetBootstrap == null ? Interception::returnNull : targetBootstrap;
@@ -588,8 +608,10 @@ public final class Interception implements Callable<Object> {
    * @param arguments an array of {@link Object}s; may be {@code null}; must have a length equal to that of the supplied
    * {@code parameterTypes} array
    *
-   * @exception IllegalArgumentException if not every element of the supplied {@code arguments} array can be assigned to
-   * a reference bearing the corresponding {@link Class} drawn from the supplied {@code parameterTypes} array
+   * @exception IllegalArgumentException if validation fails, i.e. if the length of {@code parameterTypes} is not equal
+   * to the length of {@code arguments}, or if an element of {@code parameterTypes} is {@code null} or {@code
+   * void.class}, or if not every element of the supplied {@code arguments} array can be assigned to a reference bearing
+   * the corresponding {@link Class} drawn from the supplied {@code parameterTypes} array
    */
   public static final void validate(final Class<?>[] parameterTypes, final Object[] arguments) {
     final int parameterTypesLength = parameterTypes == null ? 0 : parameterTypes.length;
@@ -782,7 +804,7 @@ public final class Interception implements Callable<Object> {
   }
 
   private static final Supplier<?> targetBootstrap(final Supplier<?> s) {
-    return s == null ? Interception::returnNull : memoize(s);
+    return s == null ? Interception::returnNull : s;
   }
 
   private static final <X> X throwIllegalStateException() {
@@ -931,6 +953,12 @@ public final class Interception implements Callable<Object> {
       @Override // InvocationContext
       public final Map<String, Object> getContextData() {
         return data;
+      }
+
+      // So deeply unfortunate this is going to be part of Interceptors 2.2
+      // @Override
+      public final Set<Annotation> getInterceptorBindings() {
+        return interceptorBindingsBootstrap.get();
       }
 
       @Override // InvocationContext
