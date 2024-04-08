@@ -1,1 +1,1 @@
-typeSearchIndex = [{"l":"All Classes","url":"allclasses-index.html"},{"p":"org.microbean.interceptor","l":"Chain"},{"p":"org.microbean.interceptor","l":"InterceptorException"},{"p":"org.microbean.interceptor","l":"InterceptorMethod"}]
+typeSearchIndex = [{"l":"All Classes","url":"allclasses-index.html"},{"p":"org.microbean.interceptor","l":"Chain"},{"p":"org.microbean.interceptor","l":"Interception"},{"p":"org.microbean.interceptor","l":"InterceptorException"},{"p":"org.microbean.interceptor","l":"InterceptorMethod"}]
