@@ -96,7 +96,7 @@ public class Chain implements Callable<Object>, InvocationContext {
 
   private final Callable<?> proceedImplementation;
 
-  private final Chain targetHost;
+  private final Chain chain;
 
   private volatile Object[] arguments;
 
@@ -107,6 +107,9 @@ public class Chain implements Callable<Object>, InvocationContext {
    * Constructors.
    */
 
+  /*
+   * Lifecycle method/callback.
+   */
 
   /**
    * Creates a new {@link Chain} primarily for testing purposes.
@@ -136,7 +139,7 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.methodSupplier = Chain::returnNull;
     this.timerSupplier = Chain::returnNull;
     this.targetSupplier = Chain::returnNull;
-    this.targetHost = this;
+    this.chain = this;
     this.proceedImplementation = Chain::returnNull;
     this.argumentsSupplier = Chain::emptyObjectArray;
     this.setParametersImplementation = Chain::throwIllegalStateException;
@@ -166,7 +169,6 @@ public class Chain implements Callable<Object>, InvocationContext {
   public Chain(final List<? extends InterceptorMethod> interceptorMethods,
                final Supplier<?> targetSupplier) {
     this(interceptorMethods,
-         // Chain::returnNull, // terminal function
          null, // terminal function; null on purpose
          false, // set target
          new ConcurrentHashMap<>(),
@@ -176,8 +178,12 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::emptyObjectArray, // arguments supplier
          Chain::sink, // arguments validator
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
+
+  /*
+   * Around-construct.
+   */
 
   /**
    * Creates a new {@link Chain} for around-construct interceptions.
@@ -215,7 +221,7 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::emptyObjectArray, // arguments supplier
          args -> validate(terminalConstructor.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
 
   /**
@@ -256,8 +262,52 @@ public class Chain implements Callable<Object>, InvocationContext {
          argumentsSupplier,
          args -> validate(terminalConstructor.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
+
+  /**
+   * Creates a new {@link Chain} for around-construct interceptions.
+   *
+   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
+   *
+   * <ul>
+   *
+   * <li>{@link #getConstructor()}</li>
+   *
+   * <li>{@link #getMethod()}</li>
+   *
+   * <li>{@link #getTimer()}</li>
+   *
+   * </ul>
+   *
+   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
+   *
+   * @param terminalFunction the terminal {@link Function} to intercept; must not be {@code null}
+   *
+   * @param argumentsSupplier a {@link Supplier} supplying the arguments for the terminal {@link Function}; may be
+   * {@code null}
+   *
+   * @exception NullPointerException if {@code terminalFunction} is {@code null}
+   */
+  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
+               final Function<? super Object[], ?> terminalFunction,
+               final Supplier<? extends Object[]> argumentsSupplier) {
+    this(interceptorMethods,
+         Objects.requireNonNull(terminalFunction, "terminalFunction"),
+         true, // set target
+         new ConcurrentHashMap<>(),
+         Chain::returnNull, // constructor supplier
+         Chain::returnNull, // method supplier
+         Chain::returnNull, // target supplier (won't ever be consulted/invoked; target is set by terminalFunction directly)
+         argumentsSupplier,
+         Chain::sink, // arguments validator
+         Chain::returnNull, // timer supplier
+         null); // chain
+  }
+
+  /*
+   * Around-invoke.
+   */
 
   /**
    * Creates a new {@link Chain} for around-invoke interceptions.
@@ -296,7 +346,7 @@ public class Chain implements Callable<Object>, InvocationContext {
          Chain::emptyObjectArray, // arguments supplier
          args -> validate(terminalMethod.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
 
   /**
@@ -337,51 +387,14 @@ public class Chain implements Callable<Object>, InvocationContext {
          () -> terminalMethod,
          targetSupplier,
          argumentsSupplier,
-         // Chain::sink, // arguments validator
          args -> validate(terminalMethod.getParameterTypes(), args),
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
 
-  /**
-   * Creates a new {@link Chain} for around-construct interceptions.
-   *
-   * <p>The resulting {@link Chain} will return {@code null} from the following methods:</p>
-   *
-   * <ul>
-   *
-   * <li>{@link #getConstructor()}</li>
-   *
-   * <li>{@link #getMethod()}</li>
-   *
-   * <li>{@link #getTimer()}</li>
-   *
-   * </ul>
-   *
-   * @param interceptorMethods a {@link List} of {@link InterceptorMethod}s; may, rather uselessly, be {@code null}
-   *
-   * @param terminalFunction the terminal {@link Function} to intercept; must not be {@code null}
-   *
-   * @param argumentsSupplier a {@link Supplier} supplying the arguments for the terminal {@link Function}; may be
-   * {@code null}
-   *
-   * @exception NullPointerException if {@code terminalFunction} is {@code null}
+  /*
+   * Around-construct or around-invoke (but not lifecycle method).
    */
-  public Chain(final List<? extends InterceptorMethod> interceptorMethods,
-               final Function<? super Object[], ?> terminalFunction,
-               final Supplier<? extends Object[]> argumentsSupplier) {
-    this(interceptorMethods,
-         Objects.requireNonNull(terminalFunction, "terminalFunction"),
-         true, // set target
-         new ConcurrentHashMap<>(),
-         Chain::returnNull, // constructor supplier
-         Chain::returnNull, // method supplier
-         Chain::returnNull, // target supplier (won't ever be consulted/invoked; target is set by terminalFunction directly)
-         argumentsSupplier,
-         Chain::sink, // arguments validator
-         Chain::returnNull, // timer supplier
-         null); // targetHost
-  }
 
   /**
    * Creates a new {@link Chain} for around-construct or around-invoke interceptions.
@@ -426,8 +439,12 @@ public class Chain implements Callable<Object>, InvocationContext {
          argumentsSupplier,
          Chain::sink, // arguments validator
          Chain::returnNull, // timer supplier
-         null); // targetHost
+         null); // chain
   }
+
+  /*
+   * Kitchen sink constructor.
+   */
 
   // Everything is nullable.
   private Chain(List<? extends InterceptorMethod> interceptorMethods,
@@ -440,7 +457,7 @@ public class Chain implements Callable<Object>, InvocationContext {
                 final Supplier<? extends Object[]> argumentsSupplier,
                 final Consumer<? super Object[]> argumentsValidator,
                 final Supplier<?> timerSupplier,
-                final Chain targetHost) {
+                final Chain parent) {
     super();
     this.contextData = contextData == null ? new ConcurrentHashMap<>() : contextData;
     this.constructorSupplier = constructorSupplier == null ? Chain::returnNull : constructorSupplier;
@@ -448,18 +465,17 @@ public class Chain implements Callable<Object>, InvocationContext {
     this.argumentsSupplier = argumentsSupplier == null ? Chain::emptyObjectArray : argumentsSupplier;
     this.timerSupplier = timerSupplier == null ? Chain::returnNull : timerSupplier;
     this.targetSupplier = targetSupplier == null ? Chain::returnNull : targetSupplier;
-    this.targetHost = targetHost == null ? this : targetHost;
+    this.chain = parent == null ? this : parent;
     if (interceptorMethods == null || interceptorMethods.isEmpty()) {
       Objects.requireNonNull(terminalFunction, "terminalFunction");
-      if (argumentsValidator == null) {
-        this.setParametersImplementation = args -> this.setArguments(Chain::sink, args);
-      } else {
-        this.setParametersImplementation = args -> this.setArguments(argumentsValidator, args);
-      }
+      this.setParametersImplementation =
+        argumentsValidator == null ?
+        args -> this.setArguments(Chain::sink, args) :
+        args -> this.setArguments(argumentsValidator, args);
       if (setTarget) {
         this.proceedImplementation = () -> {
           final Object t = terminalFunction.apply(this.getParameters());
-          TARGET.setVolatile(this.targetHost, t); // volatile write
+          TARGET.setVolatile(this.chain, t); // volatile write
           return t;
         };
       } else {
@@ -474,21 +490,23 @@ public class Chain implements Callable<Object>, InvocationContext {
         this.setParametersImplementation = args -> this.setArguments(argumentsValidator, args);
       }
       interceptorMethods = List.copyOf(interceptorMethods);
-      final InterceptorMethod im = interceptorMethods.get(0);
       final int size = interceptorMethods.size();
-      final List<? extends InterceptorMethod> ims = size == 1 ? List.of() : interceptorMethods.subList(1, size);
-      this.proceedImplementation =
-        () -> im.intercept(new Chain(ims,
-                                     terminalFunction,
-                                     setTarget,
-                                     this.contextData,
-                                     this::getConstructor,
-                                     this::getMethod,
-                                     this.targetSupplier,
-                                     this.argumentsSupplier,
-                                     argumentsValidator,
-                                     this::getTimer,
-                                     this.targetHost));
+      final InterceptorMethod im = interceptorMethods.get(0);
+      // TODO: OK to create Chain here, or do we need to create a new one inside the proceedImplementation? Consider
+      // setParameters(), setTarget(Object). See also: https://www.eclipse.org/lists/interceptors-dev/msg00056.html
+      final Chain chain = new Chain(size == 1 ? List.of() : interceptorMethods.subList(1, size),
+                                    terminalFunction,
+                                    setTarget,
+                                    this.contextData,
+                                    this.constructorSupplier,
+                                    this.methodSupplier,
+                                    this.targetSupplier,
+                                    this.argumentsSupplier,
+                                    argumentsValidator,
+                                    this.timerSupplier,
+                                    this.chain);
+      
+      this.proceedImplementation = () -> im.intercept(chain);
     }
   }
 
@@ -548,14 +566,14 @@ public class Chain implements Callable<Object>, InvocationContext {
   @Override
   public final Object[] getParameters() {
     // Cloning etc. is not necessary; this whole API is stupid
-    final Object[] arguments = this.arguments; // volatile read
+    final Object[] arguments = this.chain.arguments; // volatile read
     if (arguments == null) {
       try {
         this.setParameters(this.argumentsSupplier.get());
       } catch (final IllegalArgumentException e) {
         throw new IllegalStateException(e.getMessage(), e);
       }
-      return this.arguments; // volatile read
+      return this.chain.arguments; // volatile read
     }
     return arguments;
   }
@@ -567,11 +585,11 @@ public class Chain implements Callable<Object>, InvocationContext {
    */
   @Override
   public final Object getTarget() {
-    Object target = this.targetHost.target; // volatile read
+    Object target = this.chain.target; // volatile read
     if (target == null) {
       target = this.targetSupplier.get();
-      if (target != null && TARGET.compareAndSet(this.targetHost, null, target)) { // volatile write
-        target = this.targetHost.target; // volatile read
+      if (target != null && TARGET.compareAndSet(this.chain, null, target)) { // volatile write
+        target = this.chain.target; // volatile read
       }
     }
     return target;
@@ -585,9 +603,12 @@ public class Chain implements Callable<Object>, InvocationContext {
    * @exception NullPointerException if {@code target} is {@code null}
    *
    * @see #getTarget()
+   *
+   * @deprecated This really shouldn't be needed as part of the public API.
    */
+  @Deprecated // should not be needed?
   public final void setTarget(final Object target) {
-    TARGET.setVolatile(this.targetHost, Objects.requireNonNull(target, "target")); // volatile write
+    TARGET.setVolatile(this.chain, Objects.requireNonNull(target, "target")); // volatile write
   }
 
   /**
@@ -652,11 +673,11 @@ public class Chain implements Callable<Object>, InvocationContext {
   private final void setArguments(final Consumer<? super Object[]> argumentsValidator, final Object[] arguments) {
     if (arguments == null) {
       argumentsValidator.accept(EMPTY_OBJECT_ARRAY);
-      this.arguments = EMPTY_OBJECT_ARRAY; // volatile write
+      this.chain.arguments = EMPTY_OBJECT_ARRAY; // volatile write
     } else {
       // Cloning etc. is not necessary; this whole API is stupid
       argumentsValidator.accept(arguments);
-      this.arguments = arguments; // volatile write
+      this.chain.arguments = arguments; // volatile write
     }
   }
 

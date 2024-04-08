@@ -1,6 +1,6 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2023 microBean™.
+ * Copyright © 2023–2024 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
  * the License.  You may obtain a copy of the License at
@@ -21,6 +21,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.inject.se.SeContainer;
 import jakarta.enterprise.inject.se.SeContainerInitializer;
 
+import jakarta.enterprise.inject.spi.BeanManager;
+
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
@@ -40,6 +42,9 @@ import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 final class TestWeldInterception {
 
@@ -83,7 +88,11 @@ final class TestWeldInterception {
     //     Bean.businessMethod()
     b.businessMethod();
     assertEquals(1, ExternalInterceptor.count);
-    assertEquals(1, Bean.count);
+    assertEquals(2, Bean.count);
+    final BeanManager bm = this.container.select(BeanManager.class).get();
+    // Create a contextual *instance* and note that a new interceptor is created
+    bm.resolve(bm.getBeans(Bean.class)).create(bm.createCreationalContext(null));
+    
   }
 
   @Interceptor
@@ -97,18 +106,33 @@ final class TestWeldInterception {
     ExternalInterceptor() {
       super();
       count++;
+      System.out.println("ExternalInterceptor.ExternalInterceptor()");
     }
 
     @AroundConstruct
     void aroundConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.aroundConstructMethod()");
+      assertNull(ic.getTarget());
       ic.proceed();
+      final Object target0 = ic.getTarget();
+      assertNotNull(target0);
+      ic.proceed();
+      final Object target1 = ic.getTarget();
+      assertNotNull(target1);
+      assertNotSame(target0, target1);
+    }
+
+    @AroundConstruct
+    Object anotherAroundConstructMethod(final InvocationContext ic) throws Exception {
+      System.out.println("ExternalInterceptor.anotherAroundConstructMethod()");
+      ic.proceed();
+      return Integer.valueOf(47);
     }
 
     @PostConstruct
     void postConstructMethod(final InvocationContext ic) throws Exception {
       System.out.println("ExternalInterceptor.postConstructMethod()");
-      // ic.proceed();
+      ic.proceed(); // or not
     }
 
     @AroundInvoke

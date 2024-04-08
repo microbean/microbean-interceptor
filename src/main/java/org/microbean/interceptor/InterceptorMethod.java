@@ -91,7 +91,8 @@ public interface InterceptorMethod {
   }
 
   /**
-   * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle}.
+   * Returns a new {@link InterceptorMethod} that adapts the supplied receiverless or {@linkplain
+   * MethodHandle#bindTo(Object) bound} {@link MethodHandle}.
    *
    * @param receiverlessOrBoundMethodHandle a {@link MethodHandle}; must not be {@code null}; must either not require a
    * receiver or must be already {@linkplain MethodHandle#bindTo(Object) bound} to one; must accept exactly one {@link
@@ -107,7 +108,7 @@ public interface InterceptorMethod {
 
   /**
    * Returns a new {@link InterceptorMethod} that adapts the supplied {@link MethodHandle} and the supplied {@link
-   * Supplier of its receiver}.
+   * Supplier} of its receiver.
    *
    * @param mh a {@link MethodHandle}; must not be {@code null}; must either accept two arguments where the first
    * argument's type is a valid receiver type and the second argument's type is {@link InvocationContext}, or one
