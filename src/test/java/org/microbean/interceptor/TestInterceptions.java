@@ -22,8 +22,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import java.util.List;
+import java.util.Set;
 
 import java.util.concurrent.atomic.AtomicReference;
+
+import java.util.function.Function;
 
 import jakarta.interceptor.InvocationContext;
 
@@ -40,7 +43,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-final class TestInterception {
+import static org.microbean.interceptor.Interceptions.ofConstruction;
+import static org.microbean.interceptor.Interceptions.ofInvocation;
+
+final class TestInterceptions {
 
   private static final Lookup lookup = lookup();
 
@@ -52,7 +58,7 @@ final class TestInterception {
 
   private static boolean invoke;
 
-  private TestInterception() {
+  private TestInterceptions() {
     super();
     construct = true;
   }
@@ -106,21 +112,21 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, this.getClass().getDeclaredConstructor());
-    final TestInterception t = (TestInterception)interception.call();
+    final InterceptionFunction f = ofConstruction(ims, this.getClass().getDeclaredConstructor(), Set::of);
+    final TestInterceptions t = (TestInterceptions)f.apply((Object[])null); // null arguments
     assertNotNull(t);
     assertNotSame(this, t);
-    final TestInterception newT = (TestInterception)interception.call();
+    final TestInterceptions newT = (TestInterceptions)f.apply((Object[])null); // null arguments
     assertNotNull(newT);
     assertNotSame(t, newT);
     assertNotSame(this, newT);
-    
+
     assertTrue(aroundConstruct);
     assertTrue(construct);
     assertFalse(aroundInvoke);
     assertFalse(invoke);
   }
-  
+
   @Test
   final void testMethodHandleStuff() throws Throwable {
     final Method m = Frobnicator.class.getDeclaredMethod("frobnicate");
@@ -136,8 +142,8 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, Frobnicator.class.getDeclaredMethod("frobnicate"), Frobnicator::new);
-    assertNull(interception.call());
+    final InterceptionFunction f = ofInvocation(ims, Frobnicator.class.getDeclaredMethod("frobnicate"), Frobnicator::new, Set::of);
+    assertNull(f.apply((Object[])null));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
   }
@@ -145,8 +151,8 @@ final class TestInterception {
   @Test
   final void testUninterceptedAdd() throws Exception {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final Interception interception = new Interception(List.of(), add, Frobnicator::new, () -> new Object[] { 1, 2 });
-    assertEquals(Integer.valueOf(3), interception.call());
+    final InterceptionFunction f = ofInvocation(List.of(), add, Frobnicator::new, Set::of);
+    assertEquals(Integer.valueOf(3), f.apply(new Object[] { 1, 2 }));
     assertFalse(construct);
     assertFalse(aroundConstruct);
     assertTrue(invoke);
@@ -159,8 +165,8 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, add, Frobnicator::new, () -> new Object[] { 1, 2 });
-    assertEquals(Integer.valueOf(3), interception.call());
+    final InterceptionFunction f = ofInvocation(ims, add, Frobnicator::new, Set::of);
+    assertEquals(Integer.valueOf(3), f.apply(new Object[] { 1, 2 }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
   }
@@ -171,8 +177,8 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, ruminate, Frobnicator::new, () -> new Object[] { 1, 2 });
-    assertNull(interception.call());
+    final InterceptionFunction interception = ofInvocation(ims, ruminate, Frobnicator::new, Set::of);
+    assertNull(interception.apply(new Object[] { 1, 2 }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
   }
@@ -183,8 +189,8 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, voidCaturgiate, Frobnicator::new, () -> new Object[] { new Object[] { 1, 2 } });
-    assertNull(interception.call());
+    final InterceptionFunction interception = ofInvocation(ims, voidCaturgiate, Frobnicator::new, Set::of);
+    assertNull(interception.apply(new Object[] { new Object[] { 1, 2 } }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
   }
@@ -196,13 +202,13 @@ final class TestInterception {
     final List<InterceptorMethod> ims =
       List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final Interception interception = new Interception(ims, caturgiate, Frobnicator::new, () -> new Object[] { new Object[] { 1, 2 } });
-    assertEquals(Integer.valueOf(3), interception.call());
+    final InterceptionFunction interception = ofInvocation(ims, caturgiate, Frobnicator::new, Set::of);
+    assertEquals(Integer.valueOf(3), interception.apply(new Object[] { new Object[] { 1, 2 } }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
   }
 
-  private final TestInterception returnThis() {
+  private final TestInterceptions returnThis() {
     return this;
   }
 
