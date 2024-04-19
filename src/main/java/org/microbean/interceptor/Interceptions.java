@@ -49,6 +49,12 @@ import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.invoke.MethodHandles.lookup;
 import static java.lang.invoke.MethodHandles.privateLookupIn;
 
+/**
+ * A utility class that makes {@link InterceptionFunction}s and {@link Runnable}s that intercept lifecycle events,
+ * constructions, and invocations of methods in accordance with the Jakarta Interceptors specification.
+ *
+ * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
+ */
 public final class Interceptions {
 
 
@@ -107,10 +113,46 @@ public final class Interceptions {
    */
 
 
+  /**
+   * Returns a {@link Runnable} whose {@link Runnable#run() run()} method will invoke all supplied {@link
+   * InterceptorMethod}s in encounter order.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} in which case the returned
+   * {@link Runnable}'s {@link Runnable#run() run()} method will do nothing
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @return a {@link Runnable}; never {@code null}
+   */
   // Methodless lifecycle event interception. For example, post-construct interceptions by external interceptors only.
-  public static Runnable ofLifecycleEvent(final Collection<? extends InterceptorMethod> interceptorMethods,
-                                          final Supplier<?> targetBootstrap,
-                                          final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
+  public static final Runnable ofLifecycleEvent(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                final Supplier<?> targetBootstrap) {
+    return ofLifecycleEvent(interceptorMethods, targetBootstrap, Set::of);
+  }
+
+  /**
+   * Returns a {@link Runnable} whose {@link Runnable#run() run()} method will invoke all supplied {@link
+   * InterceptorMethod}s in encounter order.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} in which case the returned
+   * {@link Runnable}'s {@link Runnable#run() run()} method will do nothing
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
+   * for the value to be returned by the first invocation of {@link InvocationContext#getInterceptorBindings()}; may be
+   * {@code null} in which case the value will be an {@linkplain Set#of() empty, immutable <code>Set</code>}
+   *
+   * @return a {@link Runnable}; never {@code null}
+   */
+  // Methodless lifecycle event interception. For example, post-construct interceptions by external interceptors only.
+  public static final Runnable ofLifecycleEvent(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                final Supplier<?> targetBootstrap,
+                                                final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
     return () -> {
       ff(interceptorMethods,
          null,
@@ -125,10 +167,47 @@ public final class Interceptions {
     };
   }
 
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * Constructor}'s {@link Constructor#newInstance(Object...) newInstance(Object...)} method.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param constructor the {@link Constructor} to invoke; may be {@code null} (rather uselessly)
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
+   */
   // Around-construct
-  public static InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
-                                                    final Constructor<?> constructor,
-                                                    final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
+  public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final Constructor<?> constructor)
+    throws IllegalAccessException {
+    return ofConstruction(interceptorMethods, constructor, Set::of);
+  }
+
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * Constructor}'s {@link Constructor#newInstance(Object...) newInstance(Object...)} method.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param constructor the {@link Constructor} to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
+   * for the value to be returned by the first invocation of {@link InvocationContext#getInterceptorBindings()}; may be
+   * {@code null} in which case the value will be an {@linkplain Set#of() empty, immutable <code>Set</code>}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
+   */
+  // Around-construct
+  public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final Constructor<?> constructor,
+                                                          final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
     throws IllegalAccessException {
     return
       ff(interceptorMethods,
@@ -142,10 +221,50 @@ public final class Interceptions {
          interceptorBindingsBootstrap);
   }
 
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * BiFunction}'s {@link BiFunction#apply(Object, Object) apply(Object, Object[])} method with {@code null} (the return
+   * value of {@link InvocationContext#getTarget()}, which will always be {@code null} in this scenario) and the return
+   * value of an invocation of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param terminalBiFunction a {@link BiFunction} serving as a notional constructor that takes {@code null}, always,
+   * as its first argument, and the return value of an invocation of {@link InvocationContext#getParameters()} as its
+   * second argument, and returns a new instance; may be {@code null} (rather uselessly)
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   */
   // Around-construct
-  public static InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
-                                                    final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction,
-                                                    final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
+  public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction) {
+    return ofConstruction(interceptorMethods, terminalBiFunction, Set::of);
+  }
+
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * BiFunction}'s {@link BiFunction#apply(Object, Object) apply(Object Object[])} method with {@code null} (the return
+   * value of {@link InvocationContext#getTarget()}, which will always be {@code null} in this scenario) and the return
+   * value of an invocation of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param terminalBiFunction a {@link BiFunction} serving as a notional constructor that takes {@code null}, always,
+   * as its first argument, and the return value of an invocation of {@link InvocationContext#getParameters()} as its
+   * second argument, and returns a new instance; may be {@code null} (rather uselessly)
+   *
+   * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
+   * for the value to be returned by the first invocation of {@link InvocationContext#getInterceptorBindings()}; may be
+   * {@code null} in which case the value will be an {@linkplain Set#of() empty, immutable <code>Set</code>}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   */
+  // Around-construct
+  public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction,
+                                                          final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
     return
       ff(interceptorMethods,
          terminalBiFunction,
@@ -158,29 +277,130 @@ public final class Interceptions {
          interceptorBindingsBootstrap);
   }
 
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * Method}'s {@link Method#invoke(Object, Object...) invoke(Object, Object...)} method with the return value of {@link
+   * InvocationContext#getTarget()}, and with the return value of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param method a {@link Method} encapsulating the invocation to be intercepted whose {@link Method#invoke(Object,
+   * Object...)  invoke(Object, Object...)} method takes the return value of {@link InvocationContext#getTarget()} as
+   * its first argument, and the return value of {@link InvocationContext#getParameters()} spread out appropriately as
+   * its trailing arguments; may be {@code null} (rather uselessly)
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   */
   // Around-invoke or similar.
-  public static InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
-                                                  final Method method, // not nullable
-                                                  final Supplier<?> targetBootstrap,
-                                                  final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
+  public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final Method method, // not nullable
+                                                        final Supplier<?> targetBootstrap)
+    throws IllegalAccessException {
+    return ofInvocation(interceptorMethods, method, targetBootstrap, Set::of);
+  }
+
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * Method}'s {@link Method#invoke(Object, Object...) invoke(Object, Object...)} method with the return value of {@link
+   * InvocationContext#getTarget()}, and with the return value of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param method a {@link Method} encapsulating the invocation to be intercepted whose {@link Method#invoke(Object,
+   * Object...)  invoke(Object, Object...)} method takes the return value of {@link InvocationContext#getTarget()} as
+   * its first argument, and the return value of {@link InvocationContext#getParameters()} spread out appropriately as
+   * its trailing arguments; may be {@code null} (rather uselessly)
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
+   * for the value to be returned by the first invocation of {@link InvocationContext#getInterceptorBindings()}; may be
+   * {@code null} in which case the value will be an {@linkplain Set#of() empty, immutable <code>Set</code>}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   *
+   * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
+   */
+  // Around-invoke or similar.
+  public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final Method method, // not nullable
+                                                        final Supplier<?> targetBootstrap,
+                                                        final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
     throws IllegalAccessException {
     return
       ff(interceptorMethods,
-         terminalBiFunctionOf(method),
+         method == null ? null : terminalBiFunctionOf(method),
          targetBootstrap,
-         a -> validate(method.getParameterTypes(), a),
+         method == null ? null : a -> validate(method.getParameterTypes(), a),
          false, // setTarget
          null, // cb,
-         () -> method,
+         method == null ? null : () -> method,
          null, // tb
          interceptorBindingsBootstrap);
   }
 
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * BiFunction}'s {@link BiFunction#apply(Object, Object) apply(Object Object[])} method with the return value of
+   * {@link InvocationContext#getTarget()}, and with the return value of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param terminalBiFunction a {@link BiFunction} encapsulating the invocation to be intercepted that takes the return
+   * value of {@link InvocationContext#getTarget()} as its first argument, and the return value of {@link
+   * InvocationContext#getParameters()} as its second argument; may be {@code null} (rather uselessly)
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   */
   // Around-invoke or similar.
-  public static InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
-                                                  final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction,
-                                                  final Supplier<?> targetBootstrap,
-                                                  final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
+  public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction,
+                                                        final Supplier<?> targetBootstrap) {
+    return ofInvocation(interceptorMethods, terminalBiFunction, targetBootstrap, Set::of);
+  }
+
+  /**
+   * Returns an {@link InterceptionFunction} whose {@link InterceptionFunction#apply(Object...) apply(Object...)} method
+   * will invoke all supplied {@link InterceptorMethod}s in encounter order before invoking the supplied {@link
+   * BiFunction}'s {@link BiFunction#apply(Object, Object) apply(Object Object[])} method with the return value of
+   * {@link InvocationContext#getTarget()}, and with the return value of {@link InvocationContext#getParameters()}.
+   *
+   * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param terminalBiFunction a {@link BiFunction} encapsulating the invocation to be intercepted that takes the return
+   * value of {@link InvocationContext#getTarget()} as its first argument, and the return value of {@link
+   * InvocationContext#getParameters()} as its second argument; may be {@code null} (rather uselessly)
+   *
+   * @param targetBootstrap a {@link Supplier} that will be called for the initial value to be returned by the first
+   * invocation of {@link InvocationContext#getTarget()}; may be {@code null} in which case the value too will be {@code
+   * null}
+   *
+   * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
+   * for the value to be returned by the first invocation of {@link InvocationContext#getInterceptorBindings()}; may be
+   * {@code null} in which case the value will be an {@linkplain Set#of() empty, immutable <code>Set</code>}
+   *
+   * @return an {@link InterceptionFunction}; never {@code null}
+   */
+  // Around-invoke or similar.
+  public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final BiFunction<? super Object, ? super Object[], ?> terminalBiFunction,
+                                                        final Supplier<?> targetBootstrap,
+                                                        final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap) {
     return
       ff(interceptorMethods,
          terminalBiFunction,
@@ -668,9 +888,9 @@ public final class Interceptions {
               throw e;
             } catch (final InterruptedException e) {
               Thread.currentThread().interrupt();
-              throw new ProceedException(e);
+              throw new InterceptorException(e.getMessage(), e);
             } catch (final Exception e) {
-              throw new ProceedException(e);
+              throw new InterceptorException(e.getMessage(), e);
             }
           };
         }
@@ -692,8 +912,7 @@ public final class Interceptions {
         return data;
       }
 
-      // So deeply unfortunate this is going to be part of Interceptors 2.2
-      // @Override
+      @Override // InvocationContext
       public final Set<Annotation> getInterceptorBindings() {
         return interceptorBindingsBootstrap.get();
       }
@@ -728,28 +947,6 @@ public final class Interceptions {
         arguments(arguments);
       }
 
-    }
-
-  }
-
-  private static final class ProceedException extends InterceptorException {
-
-
-    /*
-     * Static fields.
-     */
-
-
-    private static final long serialVersionUID = 1L;
-
-
-    /*
-     * Constructors.
-     */
-
-
-    private ProceedException(final Exception cause) {
-      super(cause.getMessage(), cause);
     }
 
   }

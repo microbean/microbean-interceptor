@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Deprecated(forRemoval = true)
 final class TestChain {
 
   private static final Lookup lookup = lookup();

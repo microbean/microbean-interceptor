@@ -13,9 +13,28 @@
  */
 package org.microbean.interceptor;
 
+/**
+ * A {@linkplain FunctionalInterface functional interface} whose implementations represent an interception of some kind.
+ *
+ * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
+ *
+ * @see #apply(Object...)
+ */
 @FunctionalInterface
 public interface InterceptionFunction {
 
+  /**
+   * Applies the interception represented by this {@link InterceptionFunction}, with the supplied arguments, and returns
+   * the result.
+   *
+   * @param arguments arguments to the interception; must not be a {@code null} array
+   *
+   * @return the result of the interception, which may be {@code null}
+   *
+   * @exception NullPointerException if {@code arguments} is a {@code null} array
+   *
+   * @see Interceptions
+   */
   public Object apply(final Object... arguments);
 
 }
