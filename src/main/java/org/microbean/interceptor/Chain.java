@@ -48,7 +48,10 @@ import static org.microbean.interceptor.LowLevelOperation.invokeUnchecked;
  * @author <a href="https://about.me/lairdnelson/" target="_top">Laird Nelson</a>
  *
  * @see #proceed()
+ *
+ * @deprecated See {@link Interceptions}.
  */
+@Deprecated(forRemoval = true)
 public class Chain implements Callable<Object>, InvocationContext {
 
 
