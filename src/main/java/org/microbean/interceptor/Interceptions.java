@@ -1,14 +1,14 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2024 microBean™.
+ * Copyright © 2024–2025 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
 package org.microbean.interceptor;
@@ -68,10 +68,6 @@ public final class Interceptions {
   private static final Property<Object[]> EMPTY_OBJECT_ARRAY_PROPERTY = new Property<>(Interceptions::emptyObjectArray, false);
 
   private static final Logger LOGGER = getLogger(Interceptions.class.getName());
-
-  private static final Optional<Object[]> OPTIONAL_EMPTY_OBJECT_ARRAY = Optional.of(EMPTY_OBJECT_ARRAY);
-
-  private static final Lookup lookup = lookup();
 
 
   /*
@@ -174,17 +170,22 @@ public final class Interceptions {
    *
    * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
    *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
    * @param constructor the {@link Constructor} to invoke; may be {@code null} (rather uselessly)
    *
    * @return an {@link InterceptionFunction}; never {@code null}
+   *
+   * @exception NullPointerException if {@code lookup} is {@code null}
    *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
   // Around-construct
   public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final Lookup lookup,
                                                           final Constructor<?> constructor)
     throws IllegalAccessException {
-    return ofConstruction(interceptorMethods, constructor, Set::of);
+    return ofConstruction(interceptorMethods, lookup, constructor, Set::of);
   }
 
   /**
@@ -194,6 +195,8 @@ public final class Interceptions {
    *
    * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
    *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
    * @param constructor the {@link Constructor} to invoke; may be {@code null} (rather uselessly)
    *
    * @param interceptorBindingsBootstrap a {@link Supplier} of a {@link Set} of {@link Annotation}s that will be called
@@ -202,16 +205,19 @@ public final class Interceptions {
    *
    * @return an {@link InterceptionFunction}; never {@code null}
    *
+   * @exception NullPointerException if {@code lookup} is {@code null}
+   *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
   // Around-construct
   public static final InterceptionFunction ofConstruction(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                          final Lookup lookup,
                                                           final Constructor<?> constructor,
                                                           final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
     throws IllegalAccessException {
     return
       ff(interceptorMethods,
-         terminalBiFunctionOf(constructor),
+         terminalBiFunctionOf(lookup, constructor),
          null, // targetBootstrap
          a -> validate(constructor.getParameterTypes(), a),
          true, // setTarget
@@ -285,6 +291,8 @@ public final class Interceptions {
    *
    * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
    *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
    * @param method a {@link Method} encapsulating the invocation to be intercepted whose {@link Method#invoke(Object,
    * Object...)  invoke(Object, Object...)} method takes the return value of {@link InvocationContext#getTarget()} as
    * its first argument, and the return value of {@link InvocationContext#getParameters()} spread out appropriately as
@@ -296,14 +304,17 @@ public final class Interceptions {
    *
    * @return an {@link InterceptionFunction}; never {@code null}
    *
+   * @exception NullPointerException if {@code lookup} is {@code null}
+   *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
   // Around-invoke or similar.
   public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final Lookup lookup,
                                                         final Method method, // not nullable
                                                         final Supplier<?> targetBootstrap)
     throws IllegalAccessException {
-    return ofInvocation(interceptorMethods, method, targetBootstrap, Set::of);
+    return ofInvocation(interceptorMethods, lookup, method, targetBootstrap, Set::of);
   }
 
   /**
@@ -313,6 +324,8 @@ public final class Interceptions {
    * InvocationContext#getTarget()}, and with the return value of {@link InvocationContext#getParameters()}.
    *
    * @param interceptorMethods the {@link InterceptorMethod}s to invoke; may be {@code null} (rather uselessly)
+   *
+   * @param lookup a {@link Lookup}; must not be {@code null}
    *
    * @param method a {@link Method} encapsulating the invocation to be intercepted whose {@link Method#invoke(Object,
    * Object...)  invoke(Object, Object...)} method takes the return value of {@link InvocationContext#getTarget()} as
@@ -329,17 +342,20 @@ public final class Interceptions {
    *
    * @return an {@link InterceptionFunction}; never {@code null}
    *
+   * @exception NullPointerException if {@code lookup} is {@code null}
+   *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
   // Around-invoke or similar.
   public static final InterceptionFunction ofInvocation(final Collection<? extends InterceptorMethod> interceptorMethods,
+                                                        final Lookup lookup,
                                                         final Method method, // not nullable
                                                         final Supplier<?> targetBootstrap,
                                                         final Supplier<? extends Set<Annotation>> interceptorBindingsBootstrap)
     throws IllegalAccessException {
     return
       ff(interceptorMethods,
-         method == null ? null : terminalBiFunctionOf(method),
+         method == null ? null : terminalBiFunctionOf(lookup, method),
          targetBootstrap,
          method == null ? null : a -> validate(method.getParameterTypes(), a),
          false, // setTarget
@@ -435,14 +451,17 @@ public final class Interceptions {
       i = new Interceptions(cb, mb, tb, interceptorBindingsBootstrap);
       return a ->
         i.new State(target)
-        .new Context(ims.iterator())
-            .proceed();
+          .new Context(ims.iterator())
+          .proceed();
     } else if (interceptorMethods == null || interceptorMethods.isEmpty()) {
       final Property<Object> target = new Property<Object>(targetBootstrap, false);
-      return argumentsValidator == null ? Interceptions::returnNull : a -> {
-        argumentsValidator.accept(a);
-        return tbf.apply(target.get(), a);
-      };
+      return
+        argumentsValidator == null ?
+        Interceptions::returnNull :
+        a -> {
+          argumentsValidator.accept(a);
+          return tbf.apply(target.get(), a);
+        };
     } else {
       ims = List.copyOf(interceptorMethods);
       i = new Interceptions(cb, mb, tb, interceptorBindingsBootstrap);
@@ -469,9 +488,10 @@ public final class Interceptions {
       // We can get away with hoisting this Property out of the function scope because we know it will never change.
       final Property<Object> target = new Property<Object>(targetBootstrap, false);
       return a -> {
-        return i.new State(target, new Property<Object[]>(a == null ? Interceptions::emptyObjectArray : () -> a,
-                                                          argumentsValidator,
-                                                          true))
+        return
+          i.new State(target, new Property<Object[]>(a == null ? Interceptions::emptyObjectArray : () -> a,
+                                                     argumentsValidator,
+                                                     true))
           .new Context(ims.iterator(), tbf)
             .proceed();
       };
@@ -481,20 +501,25 @@ public final class Interceptions {
   /**
    * Creates and returns a {@link BiFunction} encapsulating the supplied {@link Constructor}.
    *
+   * @param lookup a {@link Lookup}; must not be {@code null}
+   *
    * @param c a {@link Constructor}; must not be {@code null}
    *
    * @return a {@link BiFunction} encapsulating the supplied {@link Constructor}; never {@code null}
    *
-   * @exception NullPointerException if {@code c} is {@code null}
+   * @exception NullPointerException if any argumebnt is {@code null}
    *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflectConstructor(Constructor) unreflecting} fails
    */
-  public static final BiFunction<Object, Object[], Object> terminalBiFunctionOf(final Constructor<?> c) throws IllegalAccessException {
+  public static final BiFunction<Object, Object[], Object> terminalBiFunctionOf(final Lookup lookup, final Constructor<?> c)
+    throws IllegalAccessException {
     return terminalBiFunctionOf(privateLookupIn(c.getDeclaringClass(), lookup).unreflectConstructor(c));
   }
 
   /**
    * Creates and returns a {@link BiFunction} encapsulating the supplied {@link Method}.
+   *
+   * @param lookup a {@link Lookup}; must not be {@code null}
    *
    * @param m a {@link Method}; must not be {@code null}
    *
@@ -504,7 +529,8 @@ public final class Interceptions {
    *
    * @exception IllegalAccessException if {@linkplain Lookup#unreflect(Method) unreflecting} fails
    */
-  public static final BiFunction<Object, Object[], Object> terminalBiFunctionOf(final Method m) throws IllegalAccessException {
+  public static final BiFunction<Object, Object[], Object> terminalBiFunctionOf(final Lookup lookup, final Method m)
+    throws IllegalAccessException {
     return terminalBiFunctionOf(privateLookupIn(m.getDeclaringClass(), lookup).unreflect(m));
   }
 
@@ -963,8 +989,6 @@ public final class Interceptions {
 
     static {
       try {
-        // Bizarrely, we cannot use the lookup static field belonging to the Interceptions class, at least in JDK
-        // 11 (NullPointerException (!)). Compiler bug?
         VALUE = lookup().findVarHandle(Property.class, "value", Optional.class);
       } catch (final IllegalAccessException | NoSuchFieldException e) {
         throw (ExceptionInInitializerError)new ExceptionInInitializerError(e.getMessage()).initCause(e);

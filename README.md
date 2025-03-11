@@ -15,12 +15,12 @@ changes, regardless of project version and without notice.**
 
 # Requirements
 
-microBean™ Interceptor requires a Java runtime of version 11 or higher.
+microBean™ Interceptor requires a Java runtime of version 10 or higher.
 
 # Installation
 
 microBean™ Interceptor is available on [Maven
-Central](https://search.maven.org/artifact/org.microbean/microbean-interceptor).  Include microBean™ Interceptor as a
+Central](https://search.maven.org/artifact/org.microbean/microbean-interceptor). Include microBean™ Interceptor as a
 Maven dependency:
 
 ```xml
@@ -28,7 +28,7 @@ Maven dependency:
   <groupId>org.microbean</groupId>
   <artifactId>microbean-interceptor</artifactId>
   <!-- Always check https://search.maven.org/artifact/org.microbean/microbean-interceptor for up-to-date available versions. -->
-  <version>0.4.0</version>
+  <version>0.5.0</version>
 </dependency>
 ```
 

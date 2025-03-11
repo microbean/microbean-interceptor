@@ -1,14 +1,14 @@
 /* -*- mode: Java; c-basic-offset: 2; indent-tabs-mode: nil; coding: utf-8-unix -*-
  *
- * Copyright © 2024 microBean™.
+ * Copyright © 2024–2025 microBean™.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * the License. You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the License for the
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
 package org.microbean.interceptor;
@@ -33,6 +33,8 @@ import jakarta.interceptor.InvocationContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.junit.jupiter.api.parallel.Execution;
+
 import static java.lang.invoke.MethodHandles.lookup;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,9 +45,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import static org.junit.jupiter.api.parallel.ExecutionMode.SAME_THREAD;
 import static org.microbean.interceptor.Interceptions.ofConstruction;
 import static org.microbean.interceptor.Interceptions.ofInvocation;
 
+@Execution(SAME_THREAD)
 final class TestInterceptions {
 
   private static final Lookup lookup = lookup();
@@ -110,9 +114,9 @@ final class TestInterceptions {
   @Test
   final void testVoidAroundConstruct() throws Exception {
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup, this.getClass().getDeclaredMethod("voidAroundConstruct", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction f = ofConstruction(ims, this.getClass().getDeclaredConstructor(), Set::of);
+    final InterceptionFunction f = ofConstruction(ims, lookup, this.getClass().getDeclaredConstructor(), Set::of);
     final TestInterceptions t = (TestInterceptions)f.apply((Object[])null); // null arguments
     assertNotNull(t);
     assertNotSame(this, t);
@@ -140,9 +144,10 @@ final class TestInterceptions {
   @Test
   final void testAroundInvokeOnFrobnicate() throws Exception {
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup,
+                                   this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction f = ofInvocation(ims, Frobnicator.class.getDeclaredMethod("frobnicate"), Frobnicator::new, Set::of);
+    final InterceptionFunction f = ofInvocation(ims, lookup, Frobnicator.class.getDeclaredMethod("frobnicate"), Frobnicator::new, Set::of);
     assertNull(f.apply((Object[])null));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
@@ -151,7 +156,7 @@ final class TestInterceptions {
   @Test
   final void testUninterceptedAdd() throws Exception {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
-    final InterceptionFunction f = ofInvocation(List.of(), add, Frobnicator::new, Set::of);
+    final InterceptionFunction f = ofInvocation(List.of(), lookup, add, Frobnicator::new, Set::of);
     assertEquals(Integer.valueOf(3), f.apply(new Object[] { 1, 2 }));
     assertFalse(construct);
     assertFalse(aroundConstruct);
@@ -163,9 +168,10 @@ final class TestInterceptions {
   final void testAroundInvokeOnAdd() throws Exception {
     final Method add = Frobnicator.class.getDeclaredMethod("add", int.class, int.class);
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup,
+                                   this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction f = ofInvocation(ims, add, Frobnicator::new, Set::of);
+    final InterceptionFunction f = ofInvocation(ims, lookup, add, Frobnicator::new, Set::of);
     assertEquals(Integer.valueOf(3), f.apply(new Object[] { 1, 2 }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
@@ -175,9 +181,10 @@ final class TestInterceptions {
   final void testAroundInvokeOnRuminate() throws Exception {
     final Method ruminate = Frobnicator.class.getDeclaredMethod("ruminate", int.class, int.class);
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup,
+                                   this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction interception = ofInvocation(ims, ruminate, Frobnicator::new, Set::of);
+    final InterceptionFunction interception = ofInvocation(ims, lookup, ruminate, Frobnicator::new, Set::of);
     assertNull(interception.apply(new Object[] { 1, 2 }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
@@ -187,9 +194,10 @@ final class TestInterceptions {
   final void testAroundInvokeOnVoidCaturgiate() throws Exception {
     final Method voidCaturgiate = Frobnicator.class.getDeclaredMethod("voidCaturgiate", Object[].class);
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup,
+                                   this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction interception = ofInvocation(ims, voidCaturgiate, Frobnicator::new, Set::of);
+    final InterceptionFunction interception = ofInvocation(ims, lookup, voidCaturgiate, Frobnicator::new, Set::of);
     assertNull(interception.apply(new Object[] { new Object[] { 1, 2 } }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
@@ -200,9 +208,10 @@ final class TestInterceptions {
     final Method caturgiate = Frobnicator.class.getDeclaredMethod("caturgiate", Object[].class);
     assertEquals(1, caturgiate.getParameterTypes().length);
     final List<InterceptorMethod> ims =
-      List.of(InterceptorMethod.of(this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
+      List.of(InterceptorMethod.of(lookup,
+                                   this.getClass().getDeclaredMethod("aroundInvoke", InvocationContext.class),
                                    this::returnThis));
-    final InterceptionFunction interception = ofInvocation(ims, caturgiate, Frobnicator::new, Set::of);
+    final InterceptionFunction interception = ofInvocation(ims, lookup, caturgiate, Frobnicator::new, Set::of);
     assertEquals(Integer.valueOf(3), interception.apply(new Object[] { new Object[] { 1, 2 } }));
     assertTrue(aroundInvoke);
     assertTrue(invoke);
