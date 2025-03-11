@@ -97,7 +97,7 @@ jobs:
           ./mvnw --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:perform
           -Darguments="${MVN_TRANSFER_LOGGING} -Dscmpublish.dryRun=${DRY_RUN} -Dscmpublish.pubScmUrl=${SCM_GIT_HTTPS_URL} -DskipTests -DstagingProfileId=${SONATYPE_OSSRH_STAGING_PROFILE_ID}"
           -DdryRun="${DRY_RUN}"
-          -Dgoals="verify,post-site,scm-publish:publish-scm,deploy"
+          -Dgoals="process-classes,post-site,scm-publish:publish-scm,deploy"
           -Dscm.url="${SCM_GIT_HTTPS_URL}"
           |
           tee /dev/fd/3
