@@ -30,14 +30,14 @@ jobs:
           persist-credentials: false
       - id: 'setup-java'
         name: 'Step: Set Up Java and Maven'
-        uses: 'actions/setup-java@v3'
+        uses: 'actions/setup-java@v4'
         with:
           cache: 'maven'
           distribution: 'temurin'
           gpg-passphrase: 'GPG_PASSPHRASE'
           gpg-private-key: '${{ secrets.GPG_PRIVATE_KEY }}'
-          java-version: '11'
-          mvn-toolchain-id: 'Temurin 11'
+          java-version: '23'
+          mvn-toolchain-id: 'Temurin 23'
           mvn-toolchain-vendor: 'openjdk' # see ../../pom.xml
           server-id: 'sonatype-oss-repository-hosting' # see https://github.com/microbean/microbean-parent/blob/master/pom.xml#L38
           server-password: 'SONATYPE_OSSRH_PASSWORD'
@@ -76,7 +76,7 @@ jobs:
 
           echo "::group::Running mvn prepare"
           
-          mvn --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:prepare
+          ./mvnw --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:prepare
           -DdryRun="${DRY_RUN}"
           -Darguments="${MVN_TRANSFER_LOGGING}"
           -Dscm.url="${SCM_GIT_HTTPS_URL}"
@@ -94,7 +94,7 @@ jobs:
           set +e
 
           {
-          mvn --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:perform
+          ./mvnw --batch-mode ${MVN_DEBUG} --errors ${MVN_TRANSFER_LOGGING} release:perform
           -Darguments="${MVN_TRANSFER_LOGGING} -Dscmpublish.dryRun=${DRY_RUN} -Dscmpublish.pubScmUrl=${SCM_GIT_HTTPS_URL} -DskipTests -DstagingProfileId=${SONATYPE_OSSRH_STAGING_PROFILE_ID}"
           -DdryRun="${DRY_RUN}"
           -Dgoals="verify,post-site,scm-publish:publish-scm,deploy"
